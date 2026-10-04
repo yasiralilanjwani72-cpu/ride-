@@ -437,7 +437,10 @@ service cloud.firestore {
 
     match /auditLogs/{logId} {
       allow get: if isAdmin() && isValidId(logId);
-      allow list: if isAdmin() && resource.data.action.size() >= 1;
+      allow list: if isVerifiedUser() && (
+        request.auth.token.email == 'yasiralilanjwani72@gmail.com' ||
+        resource.data.actorUid == request.auth.uid
+      );
       allow create: if isVerifiedUser() && isValidId(logId) && isValidAuditLog(incoming()) &&
         incoming().createdAt == request.time &&
         (incoming().actorUid == request.auth.uid || isAdmin());

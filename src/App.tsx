@@ -295,7 +295,7 @@ export default function App() {
 
       unsubs.push(
         onSnapshot(
-          query(collection(db, 'auditLogs'), where('action', '>=', '')),
+          collection(db, 'auditLogs'),
           (snap) => {
             setAuditLogs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AuditLog, 'id'>) })));
           },
