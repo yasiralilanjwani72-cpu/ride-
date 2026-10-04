@@ -1,0 +1,291 @@
+{
+  "entities": {
+    "UserAccount": {
+      "title": "UserAccount",
+      "description": "Private user account record including role and status",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "minLength": 3, "maxLength": 150 },
+        "role": { "type": "string", "enum": ["passenger", "driver", "admin"] },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "status", "createdAt", "updatedAt"]
+    },
+    "PassengerProfile": {
+      "title": "PassengerProfile",
+      "description": "Passenger personal and privacy profile",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "photoUrl": { "type": "string", "maxLength": 1000 },
+        "email": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "gender": { "type": "string", "maxLength": 20 },
+        "city": { "type": "string", "maxLength": 80 },
+        "bio": { "type": "string", "maxLength": 500 },
+        "accountStatus": { "type": "string", "enum": ["active", "suspended"] },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "totalCompletedRides": { "type": "number" },
+        "showPhoneToDriver": { "type": "boolean" },
+        "showEmailToDriver": { "type": "boolean" },
+        "memberSince": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "fullName", "photoUrl", "email", "phone", "gender", "city", "bio", "accountStatus", "rating", "reviewCount", "totalCompletedRides", "showPhoneToDriver", "showEmailToDriver", "memberSince", "createdAt", "updatedAt"]
+    },
+    "DriverProfile": {
+      "title": "DriverProfile",
+      "description": "Public driver profile visible to passengers and admins",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "photoUrl": { "type": "string", "maxLength": 1000 },
+        "city": { "type": "string", "maxLength": 80 },
+        "bio": { "type": "string", "maxLength": 600 },
+        "drivingExperienceYears": { "type": "number" },
+        "licenseSummary": { "type": "string", "maxLength": 120 },
+        "verificationStatus": { "type": "string", "enum": ["pending", "verified", "rejected", "suspended"] },
+        "rating": { "type": "number" },
+        "completedRides": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "memberSince": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "fullName", "photoUrl", "city", "bio", "drivingExperienceYears", "licenseSummary", "verificationStatus", "rating", "completedRides", "reviewCount", "memberSince", "createdAt", "updatedAt"]
+    },
+    "DriverDocument": {
+      "title": "DriverDocument",
+      "description": "Protected driver verification documents and private contact details",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "cnicNumber": { "type": "string", "maxLength": 40 },
+        "licenseNumber": { "type": "string", "maxLength": 50 },
+        "licenseExpiry": { "type": "string", "maxLength": 30 },
+        "vehicleRegDocUrl": { "type": "string", "maxLength": 1000 },
+        "cnicDocUrl": { "type": "string", "maxLength": 1000 },
+        "licenseDocUrl": { "type": "string", "maxLength": 1000 },
+        "adminNotes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "phone", "cnicNumber", "licenseNumber", "licenseExpiry", "vehicleRegDocUrl", "cnicDocUrl", "licenseDocUrl", "adminNotes", "createdAt", "updatedAt"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Driver vehicle profile and verification status",
+      "type": "object",
+      "properties": {
+        "driverUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleType": { "type": "string", "enum": ["Sedan", "SUV", "Hatchback", "Van", "Executive"] },
+        "brand": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "model": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "modelYear": { "type": "number" },
+        "registrationNumber": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "color": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "seats": { "type": "number" },
+        "images": { "type": "array" },
+        "verified": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["driverUid", "vehicleType", "brand", "model", "modelYear", "registrationNumber", "color", "seats", "images", "verified", "createdAt", "updatedAt"]
+    },
+    "Ride": {
+      "title": "Ride",
+      "description": "Long-distance ride published by a verified driver",
+      "type": "object",
+      "properties": {
+        "driverUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "driverName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "driverPhoto": { "type": "string", "maxLength": 1000 },
+        "driverVerified": { "type": "boolean" },
+        "driverRating": { "type": "number" },
+        "vehicleId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "vehicleType": { "type": "string", "maxLength": 40 },
+        "fromCity": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "toCity": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "pickupLocation": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "destinationLocation": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "optionalStops": { "type": "string", "maxLength": 300 },
+        "departureDate": { "type": "string", "minLength": 8, "maxLength": 20 },
+        "departureTime": { "type": "string", "minLength": 3, "maxLength": 20 },
+        "totalSeats": { "type": "number" },
+        "availableSeats": { "type": "number" },
+        "farePerSeat": { "type": "number" },
+        "description": { "type": "string", "maxLength": 600 },
+        "status": { "type": "string", "enum": ["upcoming", "active", "completed", "cancelled"] },
+        "pickupLat": { "type": "number" },
+        "pickupLng": { "type": "number" },
+        "destLat": { "type": "number" },
+        "destLng": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["driverUid", "driverName", "driverPhoto", "driverVerified", "driverRating", "vehicleId", "vehicleName", "vehicleType", "fromCity", "toCity", "pickupLocation", "destinationLocation", "optionalStops", "departureDate", "departureTime", "totalSeats", "availableSeats", "farePerSeat", "description", "status", "pickupLat", "pickupLng", "destLat", "destLng", "createdAt", "updatedAt"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Ride seat booking between passenger and driver",
+      "type": "object",
+      "properties": {
+        "rideId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "passengerUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "passengerName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "passengerPhoto": { "type": "string", "maxLength": 1000 },
+        "passengerPhone": { "type": "string", "maxLength": 30 },
+        "passengerCity": { "type": "string", "maxLength": 80 },
+        "driverUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "driverName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "fromCity": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "toCity": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "departureDate": { "type": "string", "minLength": 8, "maxLength": 20 },
+        "departureTime": { "type": "string", "minLength": 3, "maxLength": 20 },
+        "seatsBooked": { "type": "number" },
+        "totalFare": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "confirmed", "cancelled_by_passenger", "cancelled_by_driver", "ride_started", "completed"] },
+        "paymentStatus": { "type": "string", "enum": ["unpaid", "paid", "refunded"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["rideId", "passengerUid", "passengerName", "passengerPhoto", "passengerPhone", "passengerCity", "driverUid", "driverName", "fromCity", "toCity", "departureDate", "departureTime", "seatsBooked", "totalFare", "status", "paymentStatus", "createdAt", "updatedAt"]
+    },
+    "LiveLocation": {
+      "title": "LiveLocation",
+      "description": "Private live GPS location for active ride shared only with confirmed passengers, driver, and admin",
+      "type": "object",
+      "properties": {
+        "rideId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "driverUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "driverName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "vehicleName": { "type": "string", "maxLength": 120 },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "heading": { "type": "number" },
+        "speedKmh": { "type": "number" },
+        "distanceRemainingKm": { "type": "number" },
+        "etaMinutes": { "type": "number" },
+        "pickupLocation": { "type": "string", "maxLength": 200 },
+        "destinationLocation": { "type": "string", "maxLength": 200 },
+        "pickupLat": { "type": "number" },
+        "pickupLng": { "type": "number" },
+        "destLat": { "type": "number" },
+        "destLng": { "type": "number" },
+        "active": { "type": "boolean" },
+        "rideStatus": { "type": "string", "enum": ["en_route_pickup", "in_progress", "arrived", "completed"] },
+        "confirmedPassengerUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["rideId", "driverUid", "driverName", "vehicleName", "lat", "lng", "heading", "speedKmh", "distanceRemainingKm", "etaMinutes", "pickupLocation", "destinationLocation", "pickupLat", "pickupLng", "destLat", "destLng", "active", "rideStatus", "confirmedPassengerUids", "createdAt", "updatedAt"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Post-ride rating and review",
+      "type": "object",
+      "properties": {
+        "rideId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "bookingId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "reviewerUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "reviewerName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "reviewerRole": { "type": "string", "enum": ["passenger", "driver"] },
+        "targetUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "targetName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "rating": { "type": "number" },
+        "comment": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["rideId", "bookingId", "reviewerUid", "reviewerName", "reviewerRole", "targetUid", "targetName", "rating", "comment", "createdAt", "updatedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app real-time notification",
+      "type": "object",
+      "properties": {
+        "recipientUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "type": { "type": "string", "enum": ["booking", "ride", "verification", "system", "tracking"] },
+        "read": { "type": "boolean" },
+        "relatedId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recipientUid", "senderUid", "title", "message", "type", "read", "relatedId", "createdAt", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Security and administrative audit log",
+      "type": "object",
+      "properties": {
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorEmail": { "type": "string", "maxLength": 150 },
+        "action": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "targetType": { "type": "string", "maxLength": 60 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["actorUid", "actorEmail", "action", "targetType", "targetId", "details", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserAccount",
+      "description": "Private user account records"
+    },
+    "/passengerProfiles/{userId}": {
+      "schema": "PassengerProfile",
+      "description": "Passenger profiles"
+    },
+    "/driverProfiles/{driverId}": {
+      "schema": "DriverProfile",
+      "description": "Public driver profiles"
+    },
+    "/driverDocuments/{driverId}": {
+      "schema": "DriverDocument",
+      "description": "Private driver verification documents and PII"
+    },
+    "/vehicles/{vehicleId}": {
+      "schema": "Vehicle",
+      "description": "Driver vehicles"
+    },
+    "/rides/{rideId}": {
+      "schema": "Ride",
+      "description": "Published long-distance rides"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Passenger ride bookings"
+    },
+    "/liveLocations/{rideId}": {
+      "schema": "LiveLocation",
+      "description": "Private live GPS tracking locations for active rides"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Post-ride reviews and ratings"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Real-time user notifications"
+    },
+    "/auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System and admin audit logs"
+    }
+  }
+}

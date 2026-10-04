@@ -1,0 +1,6 @@
+{
+  "name": "Ride Connect",
+  "description": "A complete professional long-distance ride booking, driver verification, live GPS tracking, and centralized administration platform.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
