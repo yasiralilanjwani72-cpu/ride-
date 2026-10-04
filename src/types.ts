@@ -190,9 +190,26 @@ export interface AppNotification {
   senderUid: string;
   title: string;
   message: string;
-  type: 'booking' | 'ride' | 'verification' | 'system' | 'tracking';
+  type: 'booking' | 'ride' | 'verification' | 'system' | 'tracking' | 'sos';
   read: boolean;
   relatedId: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface SOSAlert {
+  id: string;
+  senderUid: string;
+  senderName: string;
+  senderEmail: string;
+  senderPhone: string;
+  senderRole: 'passenger' | 'driver';
+  lat: number;
+  lng: number;
+  locationLabel: string;
+  rideId: string;
+  message: string;
+  status: 'active' | 'resolved';
   createdAt?: unknown;
   updatedAt?: unknown;
 }

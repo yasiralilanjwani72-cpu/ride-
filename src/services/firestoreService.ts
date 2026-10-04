@@ -30,6 +30,7 @@ import {
   Booking,
   LiveLocation,
   Review,
+  SOSAlert,
   CITY_COORDINATES,
 } from '../types';
 import defaultDriverAvatar from '../assets/images/avatar_driver_pro_1791134254517.jpg';
@@ -65,7 +66,7 @@ export async function sendNotification(
   recipientUid: string,
   title: string,
   message: string,
-  type: 'booking' | 'ride' | 'verification' | 'system' | 'tracking',
+  type: 'booking' | 'ride' | 'verification' | 'system' | 'tracking' | 'sos',
   relatedId = ''
 ) {
   const user = auth.currentUser;
@@ -86,6 +87,108 @@ export async function sendNotification(
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function triggerSOSAlert(params: {
+  senderUid: string;
+  senderName: string;
+  senderEmail: string;
+  senderPhone: string;
+  senderRole: 'passenger' | 'driver';
+  lat: number;
+  lng: number;
+  locationLabel: string;
+  rideId?: string;
+  message?: string;
+}): Promise<string> {
+  const alertId = generateSafeId('sos');
+  const path = `sosAlerts/${alertId}`;
+  const cleanLat = Number(params.lat) || CITY_COORDINATES.Karachi.lat;
+  const cleanLng = Number(params.lng) || CITY_COORDINATES.Karachi.lng;
+  const cleanLabel = sanitizeString(
+    params.locationLabel || `${cleanLat.toFixed(4)}° N, ${cleanLng.toFixed(4)}° E`,
+    VALIDATION_LIMITS.LOCATION_MAX
+  );
+  const cleanMsg = sanitizeString(
+    params.message ||
+      `EMERGENCY SOS triggered by ${params.senderRole.toUpperCase()} ${params.senderName} at GPS (${cleanLat.toFixed(4)}, ${cleanLng.toFixed(4)}) — ${cleanLabel}. Immediate assistance requested.`,
+    VALIDATION_LIMITS.NOTIF_MSG_MAX
+  );
+
+  try {
+    await setDoc(doc(db, 'sosAlerts', alertId), {
+      senderUid: sanitizeString(params.senderUid, VALIDATION_LIMITS.ID_MAX),
+      senderName: sanitizeString(params.senderName, VALIDATION_LIMITS.NAME_MAX),
+      senderEmail: sanitizeString(params.senderEmail, VALIDATION_LIMITS.EMAIL_MAX),
+      senderPhone: sanitizeString(params.senderPhone, VALIDATION_LIMITS.PHONE_MAX),
+      senderRole: params.senderRole,
+      lat: cleanLat,
+      lng: cleanLng,
+      locationLabel: cleanLabel,
+      rideId: sanitizeString(params.rideId || 'N/A', VALIDATION_LIMITS.ID_MAX),
+      message: cleanMsg,
+      status: 'active',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    // Notify sender with immediate confirmation
+    await sendNotification(
+      params.senderUid,
+      'SOS Emergency Alert Dispatched',
+      `Your live GPS coordinates (${cleanLat.toFixed(4)}° N, ${cleanLng.toFixed(4)}° E) and contact details have been transmitted to Central Admin Command.`,
+      'sos',
+      alertId
+    );
+
+    await logAuditAction(
+      'TRIGGER_SOS_ALERT',
+      'sosAlert',
+      alertId,
+      `${params.senderRole.toUpperCase()} ${params.senderName} triggered SOS at (${cleanLat.toFixed(4)}, ${cleanLng.toFixed(4)})`
+    );
+
+    return alertId;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function resolveSOSAlert(alert: SOSAlert) {
+  const path = `sosAlerts/${alert.id}`;
+  try {
+    await updateDoc(doc(db, 'sosAlerts', alert.id), {
+      senderUid: alert.senderUid,
+      senderName: alert.senderName,
+      senderEmail: alert.senderEmail,
+      senderPhone: alert.senderPhone,
+      senderRole: alert.senderRole,
+      lat: alert.lat,
+      lng: alert.lng,
+      locationLabel: alert.locationLabel,
+      rideId: alert.rideId,
+      message: alert.message,
+      status: 'resolved',
+      updatedAt: serverTimestamp(),
+    });
+
+    await sendNotification(
+      alert.senderUid,
+      'SOS Emergency Alert Resolved',
+      `Platform Admin has responded to and resolved your SOS emergency alert (${alert.locationLabel}).`,
+      'sos',
+      alert.id
+    );
+
+    await logAuditAction(
+      'RESOLVE_SOS_ALERT',
+      'sosAlert',
+      alert.id,
+      `Admin resolved SOS alert for ${alert.senderName}`
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 

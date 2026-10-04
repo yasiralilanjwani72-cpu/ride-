@@ -8,12 +8,14 @@ import {
   LiveLocation,
   Review,
   AppNotification,
+  CITY_COORDINATES,
 } from '../types';
 import {
   updatePassengerProfile,
   createBookingRequest,
   updateBookingStatus,
   submitReview,
+  triggerSOSAlert,
 } from '../services/firestoreService';
 import LiveRideMap from './LiveRideMap';
 import DriverPublicProfileModal from './DriverPublicProfileModal';
@@ -31,6 +33,7 @@ import {
   History,
   MessageSquare,
   SlidersHorizontal,
+  ShieldAlert,
 } from 'lucide-react';
 import defaultDriverAvatar from '../assets/images/avatar_driver_pro_1791134254517.jpg';
 
@@ -76,7 +79,11 @@ export default function PassengerPortal({
     driver: DriverProfile;
     vehicle?: Vehicle;
     ride?: Ride;
+    initialTab?: 'overview' | 'vehicle' | 'ride' | 'reviews';
   } | null>(null);
+
+  // HCI Error Prevention: Two-step confirmation before cancelling a booking
+  const [confirmCancelBookingId, setConfirmCancelBookingId] = useState<string | null>(null);
 
   // Profile Edit states
   const [fullName, setFullName] = useState(passengerProfile.fullName);
@@ -95,6 +102,12 @@ export default function PassengerPortal({
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [reviewMsg, setReviewMsg] = useState<string | null>(null);
+
+  // SOS Emergency state
+  const [sosModalOpen, setSosModalOpen] = useState(false);
+  const [sosMessage, setSosMessage] = useState('');
+  const [sosDispatching, setSosDispatching] = useState(false);
+  const [sosStatusFeedback, setSosStatusFeedback] = useState<string | null>(null);
 
   // Filtered available rides
   const filteredRides = useMemo(() => {
@@ -143,7 +156,10 @@ export default function PassengerPortal({
     return myBookings.filter((b) => b.status === 'completed');
   }, [myBookings]);
 
-  const handleOpenDriverModal = (ride: Ride) => {
+  const handleOpenDriverModal = (
+    ride: Ride,
+    initialTab: 'overview' | 'vehicle' | 'ride' | 'reviews' = 'overview'
+  ) => {
     const foundDriver = driverProfiles.find((d) => d.uid === ride.driverUid) || {
       uid: ride.driverUid,
       fullName: ride.driverName,
@@ -159,7 +175,7 @@ export default function PassengerPortal({
       memberSince: 'Oct 2026',
     };
     const foundVehicle = vehicles.find((v) => v.id === ride.vehicleId);
-    setSelectedModalData({ driver: foundDriver, vehicle: foundVehicle, ride });
+    setSelectedModalData({ driver: foundDriver, vehicle: foundVehicle, ride, initialTab });
   };
 
   const handleBookSeats = async (ride: Ride, seats: number) => {
@@ -216,6 +232,82 @@ export default function PassengerPortal({
   };
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const handleTriggerSOS = async () => {
+    setSosDispatching(true);
+    setSosStatusFeedback(null);
+
+    const activeBooking = trackableBookings[0];
+    const activeLive = activeBooking ? liveLocations[activeBooking.rideId] : undefined;
+    const defaultCityCoords = CITY_COORDINATES[passengerProfile.city] || CITY_COORDINATES.Karachi;
+
+    const dispatchWithCoords = async (lat: number, lng: number, label: string) => {
+      try {
+        await triggerSOSAlert({
+          senderUid: passengerProfile.uid,
+          senderName: passengerProfile.fullName,
+          senderEmail: passengerProfile.email,
+          senderPhone: passengerProfile.phone,
+          senderRole: 'passenger',
+          lat,
+          lng,
+          locationLabel: label,
+          rideId: activeBooking?.rideId || 'N/A',
+          message:
+            sosMessage.trim() ||
+            `Passenger emergency SOS triggered${
+              activeBooking
+                ? ` on ride ${activeBooking.fromCity} → ${activeBooking.toCity} (Captain ${activeBooking.driverName})`
+                : ''
+            }. Immediate Admin assistance required.`,
+        });
+        setSosStatusFeedback(
+          `Emergency SOS transmitted to Platform Admin with GPS (${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E).`
+        );
+        setSosMessage('');
+      } catch (err) {
+        setSosStatusFeedback(err instanceof Error ? err.message : 'Failed to send SOS alert.');
+      } finally {
+        setSosDispatching(false);
+      }
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          dispatchWithCoords(
+            pos.coords.latitude,
+            pos.coords.longitude,
+            activeBooking
+              ? `Live Device GPS (${activeBooking.fromCity} → ${activeBooking.toCity})`
+              : `Live Device GPS (${passengerProfile.city})`
+          );
+        },
+        () => {
+          const fallbackLat = activeLive?.lat ?? defaultCityCoords.lat;
+          const fallbackLng = activeLive?.lng ?? defaultCityCoords.lng;
+          dispatchWithCoords(
+            fallbackLat,
+            fallbackLng,
+            activeBooking
+              ? `Corridor Telemetry (${activeBooking.fromCity} → ${activeBooking.toCity})`
+              : `${passengerProfile.city} Sector Coordinates`
+          );
+        },
+        { enableHighAccuracy: true, timeout: 4000 }
+      );
+    } else {
+      const fallbackLat = activeLive?.lat ?? defaultCityCoords.lat;
+      const fallbackLng = activeLive?.lng ?? defaultCityCoords.lng;
+      await dispatchWithCoords(
+        fallbackLat,
+        fallbackLng,
+        activeBooking
+          ? `Corridor Telemetry (${activeBooking.fromCity} → ${activeBooking.toCity})`
+          : `${passengerProfile.city} Sector Coordinates`
+      );
+    }
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -347,6 +439,19 @@ export default function PassengerPortal({
             <span className="font-semibold text-slate-900">{passengerProfile.memberSince}</span>
           </div>
         </div>
+
+        <div className="pt-4 border-t border-slate-200">
+          <button
+            onClick={() => {
+              setSosStatusFeedback(null);
+              setSosModalOpen(true);
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-colors whitespace-nowrap"
+          >
+            <ShieldAlert className="w-4 h-4" />
+            <span>SOS EMERGENCY ALERT</span>
+          </button>
+        </div>
       </aside>
 
       {/* Main Content Area */}
@@ -355,11 +460,35 @@ export default function PassengerPortal({
           <div className="space-y-6">
             {/* Search & Multi-Filter Panel */}
             <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
-              <div>
-                <h1 className="text-xl font-bold text-slate-900">Find Long-Distance Intercity Rides</h1>
-                <p className="text-xs text-slate-500 mt-1">
-                  Inspect verified driver profiles, vehicle registrations, and real-time seat availability before booking.
-                </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h1 className="text-xl font-bold text-slate-900">Find Long-Distance Intercity Rides</h1>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Inspect verified driver profiles, vehicle registrations, and real-time seat availability before booking.
+                  </p>
+                </div>
+
+                {/* HCI Recognition Rather Than Recall: One-Click Popular Corridor Selectors */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-medium text-slate-500 mr-1">Popular Corridors:</span>
+                  {[
+                    { from: 'Karachi', to: 'Hyderabad' },
+                    { from: 'Lahore', to: 'Islamabad' },
+                    { from: 'Rawalpindi', to: 'Peshawar' },
+                  ].map((route) => (
+                    <button
+                      key={`${route.from}-${route.to}`}
+                      type="button"
+                      onClick={() => {
+                        setSearchFrom(route.from);
+                        setSearchTo(route.to);
+                      }}
+                      className="px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors whitespace-nowrap"
+                    >
+                      {route.from} → {route.to}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -550,21 +679,21 @@ export default function PassengerPortal({
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
-                            onClick={() => handleOpenDriverModal(ride)}
+                            onClick={() => handleOpenDriverModal(ride, 'overview')}
                             className="px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap"
                           >
                             View Profile
                           </button>
                           <button
-                            onClick={() => handleOpenDriverModal(ride)}
+                            onClick={() => handleOpenDriverModal(ride, 'vehicle')}
                             className="px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap"
                           >
-                            View Ride
+                            View Vehicle
                           </button>
                           <button
-                            onClick={() => handleOpenDriverModal(ride)}
+                            onClick={() => handleOpenDriverModal(ride, 'ride')}
                             disabled={ride.availableSeats === 0}
                             className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-40 rounded-lg transition-colors whitespace-nowrap"
                           >
@@ -621,64 +750,129 @@ export default function PassengerPortal({
                     b.status === 'confirmed' || b.status === 'accepted' || b.status === 'ride_started';
 
                   return (
-                    <div key={b.id} className="py-4 flex flex-wrap items-center justify-between gap-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
-                          <span>
-                            {b.fromCity} → {b.toCity}
-                          </span>
-                          <span aria-hidden="true" className="text-slate-300">·</span>
-                          <span className="text-xs font-normal text-slate-600">
-                            Captain {b.driverName}
-                          </span>
+                    <div key={b.id} className="py-4 space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                            <span>
+                              {b.fromCity} → {b.toCity}
+                            </span>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
+                            <span className="text-xs font-normal text-slate-600">
+                              Captain {b.driverName}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-mono tabular-nums">
+                            <span>{b.departureDate}</span>
+                            <span aria-hidden="true">|</span>
+                            <span>{b.departureTime}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{b.seatsBooked} Seat(s)</span>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-semibold text-slate-800">
+                              Rs. {b.totalFare.toLocaleString()}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span className="uppercase text-[11px] font-semibold text-emerald-700">
+                              Status: {b.status.replace(/_/g, ' ')}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span>Payment: {b.paymentStatus}</span>
+                          </div>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-mono tabular-nums">
-                          <span>{b.departureDate}</span>
-                          <span aria-hidden="true">|</span>
-                          <span>{b.departureTime}</span>
-                          <span aria-hidden="true">·</span>
-                          <span>{b.seatsBooked} Seat(s)</span>
-                          <span aria-hidden="true">·</span>
-                          <span className="font-semibold text-slate-800">
-                            Rs. {b.totalFare.toLocaleString()}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span className="uppercase text-[11px] font-semibold text-emerald-700">
-                            Status: {b.status.replace(/_/g, ' ')}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span>Payment: {b.paymentStatus}</span>
+
+                        <div className="flex items-center gap-2">
+                          {canTrack && (
+                            <button
+                              onClick={() => setActiveSection('tracking')}
+                              className="px-3.5 py-2 text-xs font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors whitespace-nowrap"
+                            >
+                              Track My Ride
+                            </button>
+                          )}
+                          {canCancel && (
+                            confirmCancelBookingId === b.id ? (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={async () => {
+                                    await updateBookingStatus(b, associatedRide, 'cancelled_by_passenger');
+                                    setConfirmCancelBookingId(null);
+                                  }}
+                                  className="px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors whitespace-nowrap"
+                                >
+                                  Confirm Cancel
+                                </button>
+                                <button
+                                  onClick={() => setConfirmCancelBookingId(null)}
+                                  className="px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap"
+                                >
+                                  Keep Seat
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmCancelBookingId(b.id)}
+                                className="px-3.5 py-2 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors whitespace-nowrap"
+                              >
+                                Cancel Booking
+                              </button>
+                            )
+                          )}
+                          {b.status === 'completed' && (
+                            <button
+                              onClick={() => {
+                                setReviewBookingId(b.id);
+                                setActiveSection('reviews');
+                              }}
+                              className="px-3.5 py-2 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
+                            >
+                              Rate Driver
+                            </button>
+                          )}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        {canTrack && (
-                          <button
-                            onClick={() => setActiveSection('tracking')}
-                            className="px-3.5 py-2 text-xs font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors whitespace-nowrap"
-                          >
-                            Track My Ride
-                          </button>
-                        )}
-                        {canCancel && (
-                          <button
-                            onClick={() => updateBookingStatus(b, associatedRide, 'cancelled_by_passenger')}
-                            className="px-3.5 py-2 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors whitespace-nowrap"
-                          >
-                            Cancel Booking
-                          </button>
-                        )}
-                        {b.status === 'completed' && (
-                          <button
-                            onClick={() => {
-                              setReviewBookingId(b.id);
-                              setActiveSection('reviews');
-                            }}
-                            className="px-3.5 py-2 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
-                          >
-                            Rate Driver
-                          </button>
-                        )}
+                      {/* HCI Visibility of System Status: 4-Stage Booking Lifecycle Stepper */}
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-400">
+                        <span className="text-slate-900 font-semibold">1. Requested ✓</span>
+                        <span aria-hidden="true">→</span>
+                        <span
+                          className={
+                            b.status === 'confirmed' ||
+                            b.status === 'accepted' ||
+                            b.status === 'ride_started' ||
+                            b.status === 'completed'
+                              ? 'text-emerald-700 font-semibold'
+                              : b.status === 'rejected' ||
+                                b.status === 'cancelled_by_passenger' ||
+                                b.status === 'cancelled_by_driver'
+                              ? 'text-rose-600 font-semibold'
+                              : ''
+                          }
+                        >
+                          2.{' '}
+                          {b.status === 'rejected' ||
+                          b.status === 'cancelled_by_passenger' ||
+                          b.status === 'cancelled_by_driver'
+                            ? b.status.replace(/_/g, ' ').toUpperCase()
+                            : b.status !== 'pending'
+                            ? 'Captain Confirmed ✓'
+                            : 'Awaiting Captain'}
+                        </span>
+                        <span aria-hidden="true">→</span>
+                        <span
+                          className={
+                            b.status === 'ride_started' || b.status === 'completed' || liveLocations[b.rideId]?.active
+                              ? 'text-emerald-700 font-semibold'
+                              : ''
+                          }
+                        >
+                          3. Live GPS Tracking
+                        </span>
+                        <span aria-hidden="true">→</span>
+                        <span className={b.status === 'completed' ? 'text-slate-900 font-semibold' : ''}>
+                          4. Completed & Rated
+                        </span>
                       </div>
                     </div>
                   );
@@ -1009,9 +1203,73 @@ export default function PassengerPortal({
           ride={selectedModalData.ride}
           reviews={reviews}
           passengerProfile={passengerProfile}
+          initialTab={selectedModalData.initialTab}
           onClose={() => setSelectedModalData(null)}
           onBookSeats={handleBookSeats}
         />
+      )}
+
+      {/* Passenger SOS Emergency Modal */}
+      {sosModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-rose-200 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2.5 text-rose-700">
+                <ShieldAlert className="w-5 h-5 shrink-0" />
+                <h3 className="text-base font-bold text-slate-900">
+                  Trigger Emergency SOS Alert
+                </h3>
+              </div>
+              <button
+                onClick={() => setSosModalOpen(false)}
+                className="text-xs text-slate-500 hover:text-slate-900"
+              >
+                Close
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              This will immediately transmit your current GPS coordinates, contact phone ({passengerProfile.phone}), and active ride details to Central Platform Administration.
+            </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Emergency Situation Note (Optional)
+              </label>
+              <input
+                type="text"
+                value={sosMessage}
+                onChange={(e) => setSosMessage(e.target.value)}
+                placeholder="e.g. Vehicle breakdown on M-9, medical assistance needed..."
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-rose-600"
+              />
+            </div>
+
+            {sosStatusFeedback && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-900 font-medium">
+                {sosStatusFeedback}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setSosModalOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleTriggerSOS}
+                disabled={sosDispatching}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 rounded-lg transition-colors whitespace-nowrap"
+              >
+                {sosDispatching ? 'Acquiring GPS & Sending...' : 'Send SOS & Share Live GPS'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

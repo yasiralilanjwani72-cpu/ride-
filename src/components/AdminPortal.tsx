@@ -9,6 +9,7 @@ import {
   Booking,
   LiveLocation,
   Review,
+  SOSAlert,
   AuditLog,
 } from '../types';
 import {
@@ -17,6 +18,7 @@ import {
   adminDeleteReview,
   updateBookingStatus,
   sendNotification,
+  resolveSOSAlert,
 } from '../services/firestoreService';
 import LiveRideMap from './LiveRideMap';
 import {
@@ -31,6 +33,7 @@ import {
   FileText,
   CheckCircle2,
   XCircle,
+  MapPin,
 } from 'lucide-react';
 import defaultDriverAvatar from '../assets/images/avatar_driver_pro_1791134254517.jpg';
 
@@ -44,6 +47,7 @@ interface AdminPortalProps {
   bookings: Booking[];
   liveLocations: Record<string, LiveLocation>;
   reviews: Review[];
+  sosAlerts: SOSAlert[];
   auditLogs: AuditLog[];
 }
 
@@ -57,10 +61,11 @@ export default function AdminPortal({
   bookings,
   liveLocations,
   reviews,
+  sosAlerts,
   auditLogs,
 }: AdminPortalProps) {
   const [activeTab, setActiveTab] = useState<
-    'drivers' | 'live_monitor' | 'users' | 'vehicles' | 'rides' | 'bookings' | 'reviews' | 'broadcast' | 'audit'
+    'drivers' | 'sos_center' | 'live_monitor' | 'users' | 'vehicles' | 'rides' | 'bookings' | 'reviews' | 'broadcast' | 'audit'
   >('drivers');
 
   const [selectedLiveRideId, setSelectedLiveRideId] = useState<string>('');
@@ -72,6 +77,8 @@ export default function AdminPortal({
   const activeLiveLocations = Object.values(liveLocations);
   const currentMonitoredLocation =
     (selectedLiveRideId && liveLocations[selectedLiveRideId]) || activeLiveLocations[0];
+  const activeSosAlerts = sosAlerts.filter((a) => a.status === 'active');
+  const [selectedSosAlert, setSelectedSosAlert] = useState<SOSAlert | null>(null);
 
   const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -96,6 +103,32 @@ export default function AdminPortal({
 
   return (
     <div className="space-y-6">
+      {/* Real-Time Emergency SOS Alert Banner for Admin */}
+      {activeSosAlerts.length > 0 && (
+        <div className="bg-rose-50 border border-rose-300 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5 animate-pulse" />
+            <div>
+              <div className="text-xs font-bold text-rose-900 uppercase tracking-wide">
+                ACTIVE EMERGENCY SOS ALERT ({activeSosAlerts.length})
+              </div>
+              <div className="text-xs text-rose-800 mt-0.5 font-mono">
+                Latest: {activeSosAlerts[0].senderRole.toUpperCase()} {activeSosAlerts[0].senderName} ({activeSosAlerts[0].senderPhone}) · GPS: {activeSosAlerts[0].lat.toFixed(4)}° N, {activeSosAlerts[0].lng.toFixed(4)}° E · {activeSosAlerts[0].locationLabel}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setSelectedSosAlert(activeSosAlerts[0]);
+              setActiveTab('sos_center');
+            }}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-colors whitespace-nowrap"
+          >
+            Open Emergency SOS Center →
+          </button>
+        </div>
+      )}
+
       {/* Top Executive KPI Summary Row */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 font-mono tabular-nums">
         <div className="bg-white border border-slate-200 rounded-xl p-4">
@@ -134,6 +167,23 @@ export default function AdminPortal({
           <div className="px-3 py-2 text-xs font-bold text-slate-900 border-b border-slate-200 mb-2">
             Centralized System Administration
           </div>
+
+          <button
+            onClick={() => setActiveTab('sos_center')}
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
+              activeTab === 'sos_center'
+                ? 'bg-rose-600 text-white'
+                : activeSosAlerts.length > 0
+                ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <span className="flex items-center gap-2.5">
+              <ShieldAlert className="w-4 h-4" />
+              <span>SOS Emergency Alerts</span>
+            </span>
+            <span className="font-mono font-bold">{activeSosAlerts.length}</span>
+          </button>
 
           <button
             onClick={() => setActiveTab('drivers')}
@@ -272,6 +322,126 @@ export default function AdminPortal({
 
         {/* Right Admin Viewport */}
         <main className="lg:col-span-9 space-y-6">
+          {activeTab === 'sos_center' && (
+            <div className="space-y-6">
+              <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    SOS Emergency Dispatch & GPS Command Center
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Real-time emergency alerts triggered by Passengers and Drivers with exact GPS coordinates, contact details, and live map visualization.
+                  </p>
+                </div>
+
+                {sosAlerts.length === 0 ? (
+                  <div className="py-10 text-center text-xs text-slate-500">
+                    No SOS emergency alerts have been triggered.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-200">
+                    {sosAlerts.map((alert) => (
+                      <div key={alert.id} className="py-4 space-y-3">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`text-xs font-mono font-bold uppercase ${
+                                  alert.status === 'active' ? 'text-rose-600' : 'text-emerald-700'
+                                }`}
+                              >
+                                [{alert.status.toUpperCase()}]
+                              </span>
+                              <span className="text-sm font-bold text-slate-900">
+                                {alert.senderName} ({alert.senderRole.toUpperCase()})
+                              </span>
+                              <span aria-hidden="true" className="text-slate-300">·</span>
+                              <span className="text-xs font-mono text-slate-700">
+                                {alert.senderPhone}
+                              </span>
+                              <span aria-hidden="true" className="text-slate-300">·</span>
+                              <span className="text-xs text-slate-500">{alert.senderEmail}</span>
+                            </div>
+
+                            <p className="text-xs text-slate-700">{alert.message}</p>
+
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-mono tabular-nums">
+                              <MapPin className="w-3.5 h-3.5 text-rose-600" />
+                              <span className="font-semibold text-slate-900">
+                                GPS: {alert.lat.toFixed(5)}° N, {alert.lng.toFixed(5)}° E
+                              </span>
+                              <span aria-hidden="true">·</span>
+                              <span className="font-sans">{alert.locationLabel}</span>
+                              {alert.rideId && alert.rideId !== 'N/A' && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span>Ride ID: {alert.rideId}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setSelectedSosAlert(alert)}
+                              className="px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
+                            >
+                              Pinpoint on Map
+                            </button>
+                            {alert.status === 'active' && (
+                              <button
+                                onClick={() => resolveSOSAlert(alert)}
+                                className="px-3.5 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors whitespace-nowrap"
+                              >
+                                Mark Resolved ✓
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {(selectedSosAlert || sosAlerts[0]) && (
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold text-slate-700 px-1">
+                    Emergency GPS Location Pinpoint:{' '}
+                    {(selectedSosAlert || sosAlerts[0]).senderName} (
+                    {(selectedSosAlert || sosAlerts[0]).lat.toFixed(4)}° N,{' '}
+                    {(selectedSosAlert || sosAlerts[0]).lng.toFixed(4)}° E)
+                  </div>
+                  <LiveRideMap
+                    liveLocation={{
+                      rideId: (selectedSosAlert || sosAlerts[0]).rideId || 'sos_pin',
+                      driverUid: (selectedSosAlert || sosAlerts[0]).senderUid,
+                      driverName: `SOS: ${(selectedSosAlert || sosAlerts[0]).senderName} (${(
+                        selectedSosAlert || sosAlerts[0]
+                      ).senderRole.toUpperCase()})`,
+                      vehicleName: (selectedSosAlert || sosAlerts[0]).locationLabel,
+                      lat: (selectedSosAlert || sosAlerts[0]).lat,
+                      lng: (selectedSosAlert || sosAlerts[0]).lng,
+                      heading: 0,
+                      speedKmh: 0,
+                      distanceRemainingKm: 0,
+                      etaMinutes: 0,
+                      pickupLocation: (selectedSosAlert || sosAlerts[0]).locationLabel,
+                      destinationLocation: 'Admin Emergency Response Target',
+                      pickupLat: (selectedSosAlert || sosAlerts[0]).lat,
+                      pickupLng: (selectedSosAlert || sosAlerts[0]).lng,
+                      destLat: (selectedSosAlert || sosAlerts[0]).lat + 0.02,
+                      destLng: (selectedSosAlert || sosAlerts[0]).lng + 0.02,
+                      active: (selectedSosAlert || sosAlerts[0]).status === 'active',
+                      rideStatus: 'in_progress',
+                      confirmedPassengerUids: [],
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'drivers' && (
             <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6">
               <div>

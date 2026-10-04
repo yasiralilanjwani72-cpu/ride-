@@ -38,6 +38,7 @@ import {
   LiveLocation,
   Review,
   AppNotification,
+  SOSAlert,
   AuditLog,
 } from './types';
 import {
@@ -76,10 +77,33 @@ export default function App() {
   const [liveLocations, setLiveLocations] = useState<Record<string, LiveLocation>>({});
   const [reviews, setReviews] = useState<Review[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [sosAlerts, setSosAlerts] = useState<SOSAlert[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   const isBootstrappedAdmin = fbUser?.email === 'yasiralilanjwani72@gmail.com';
   const isAdmin = isBootstrappedAdmin || userAccount?.role === 'admin';
+
+  // HCI Principle 7 (Flexibility & Efficiency of Use): Keyboard Accelerators (Alt+1, Alt+2, Alt+3)
+  useEffect(() => {
+    const handleGlobalShortcuts = (e: KeyboardEvent) => {
+      if (!fbUser || !e.altKey) return;
+      if (e.key === '1') {
+        e.preventDefault();
+        setActivePortal('passenger');
+      } else if (e.key === '2') {
+        e.preventDefault();
+        if (!myDriverProfile) {
+          switchUserRole(fbUser.uid, 'driver');
+        }
+        setActivePortal('driver');
+      } else if (e.key === '3' && isAdmin) {
+        e.preventDefault();
+        setActivePortal('admin');
+      }
+    };
+    window.addEventListener('keydown', handleGlobalShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalShortcuts);
+  }, [fbUser, isAdmin, myDriverProfile]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -295,6 +319,16 @@ export default function App() {
 
       unsubs.push(
         onSnapshot(
+          collection(db, 'sosAlerts'),
+          (snap) => {
+            setSosAlerts(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<SOSAlert, 'id'>) })));
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'sosAlerts')
+        )
+      );
+
+      unsubs.push(
+        onSnapshot(
           collection(db, 'auditLogs'),
           (snap) => {
             setAuditLogs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AuditLog, 'id'>) })));
@@ -303,6 +337,16 @@ export default function App() {
         )
       );
     } else {
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, 'sosAlerts'), where('senderUid', '==', uid)),
+          (snap) => {
+            setSosAlerts(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<SOSAlert, 'id'>) })));
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'sosAlerts')
+        )
+      );
+
       // Non-admin: listen to passenger bookings and driver bookings separately and merge
       let passBookings: Booking[] = [];
       let drvBookings: Booking[] = [];
@@ -630,37 +674,46 @@ export default function App() {
                 <span>Signed in as {fbUser.email}</span>
               </div>
 
-              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg" role="tablist" aria-label="Workspace Portals">
                 <button
+                  role="tab"
+                  aria-selected={activePortal === 'passenger'}
+                  title="Switch to Passenger Portal (Alt+1)"
                   onClick={() => handlePortalSwitch('passenger')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
                     activePortal === 'passenger'
                       ? 'bg-white text-slate-900 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Passenger Portal
+                  Passenger Portal <span className="hidden sm:inline font-mono text-[10px] text-slate-400 ml-1">Alt+1</span>
                 </button>
                 <button
+                  role="tab"
+                  aria-selected={activePortal === 'driver'}
+                  title="Switch to Driver Portal (Alt+2)"
                   onClick={() => handlePortalSwitch('driver')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
                     activePortal === 'driver'
                       ? 'bg-white text-slate-900 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Driver Portal
+                  Driver Portal <span className="hidden sm:inline font-mono text-[10px] text-slate-400 ml-1">Alt+2</span>
                 </button>
                 {isAdmin && (
                   <button
+                    role="tab"
+                    aria-selected={activePortal === 'admin'}
+                    title="Switch to Admin Portal (Alt+3)"
                     onClick={() => handlePortalSwitch('admin')}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
                       activePortal === 'admin'
                         ? 'bg-white text-slate-900 shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    Admin Portal
+                    Admin Portal <span className="hidden sm:inline font-mono text-[10px] text-slate-400 ml-1">Alt+3</span>
                   </button>
                 )}
               </div>
@@ -710,6 +763,7 @@ export default function App() {
                 bookings={bookings}
                 liveLocations={liveLocations}
                 reviews={reviews}
+                sosAlerts={sosAlerts}
                 auditLogs={auditLogs}
               />
             )}

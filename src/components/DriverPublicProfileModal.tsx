@@ -26,6 +26,7 @@ interface DriverPublicProfileModalProps {
   ride?: Ride;
   reviews: Review[];
   passengerProfile?: PassengerProfile | null;
+  initialTab?: 'overview' | 'vehicle' | 'ride' | 'reviews';
   onClose: () => void;
   onBookSeats?: (ride: Ride, seats: number) => Promise<void>;
 }
@@ -36,15 +37,24 @@ export default function DriverPublicProfileModal({
   ride,
   reviews,
   passengerProfile,
+  initialTab = 'overview',
   onClose,
   onBookSeats,
 }: DriverPublicProfileModalProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'vehicle' | 'ride' | 'reviews'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'vehicle' | 'ride' | 'reviews'>(initialTab);
   const [seatsToBook, setSeatsToBook] = useState(1);
   const [isBooking, setIsBooking] = useState(false);
   const [bookingFeedback, setBookingFeedback] = useState<string | null>(null);
 
   const driverReviews = reviews.filter((r) => r.targetUid === driver.uid);
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const handleBookNow = async () => {
     if (!ride || !onBookSeats) return;

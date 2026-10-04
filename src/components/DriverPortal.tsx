@@ -19,6 +19,7 @@ import {
   startOrUpdateLiveRide,
   completeRideAndStopTracking,
   submitReview,
+  triggerSOSAlert,
 } from '../services/firestoreService';
 import LiveRideMap from './LiveRideMap';
 import {
@@ -33,6 +34,7 @@ import {
   AlertCircle,
   CheckCircle2,
   MapPin,
+  ShieldAlert,
 } from 'lucide-react';
 import defaultDriverAvatar from '../assets/images/avatar_driver_pro_1791134254517.jpg';
 import defaultVehicleImg from '../assets/images/vehicle_sedan_white_1791134268066.jpg';
@@ -115,6 +117,15 @@ export default function DriverPortal({
   const [passRating, setPassRating] = useState(5);
   const [passComment, setPassComment] = useState('');
   const [passReviewMsg, setPassReviewMsg] = useState<string | null>(null);
+
+  // Driver SOS Emergency state
+  const [sosModalOpen, setSosModalOpen] = useState(false);
+  const [sosMessage, setSosMessage] = useState('');
+  const [sosDispatching, setSosDispatching] = useState(false);
+  const [sosStatusFeedback, setSosStatusFeedback] = useState<string | null>(null);
+
+  // HCI Error Prevention: Two-step confirmation before completing a ride
+  const [confirmCompleteRideId, setConfirmCompleteRideId] = useState<string | null>(null);
 
   const myRides = useMemo(
     () => rides.filter((r) => r.driverUid === driverProfile.uid),
@@ -277,6 +288,80 @@ export default function DriverPortal({
     }
   };
 
+  const handleDriverSOS = async () => {
+    setSosDispatching(true);
+    setSosStatusFeedback(null);
+
+    const activeRide = myRides.find((r) => r.status === 'active' || r.status === 'upcoming');
+    const activeLive = activeRide ? liveLocations[activeRide.id] : undefined;
+    const defaultCityCoords = CITY_COORDINATES[driverProfile.city] || CITY_COORDINATES.Karachi;
+
+    const dispatchWithCoords = async (lat: number, lng: number, label: string) => {
+      try {
+        await triggerSOSAlert({
+          senderUid: driverProfile.uid,
+          senderName: driverProfile.fullName,
+          senderEmail: driverDocument?.email || 'driver@rideconnect.app',
+          senderPhone: driverDocument?.phone || '+92 321 9876543',
+          senderRole: 'driver',
+          lat,
+          lng,
+          locationLabel: label,
+          rideId: activeRide?.id || 'N/A',
+          message:
+            sosMessage.trim() ||
+            `Captain emergency SOS triggered${
+              activeRide ? ` on highway route ${activeRide.fromCity} → ${activeRide.toCity}` : ''
+            }. Immediate Admin assistance required.`,
+        });
+        setSosStatusFeedback(
+          `Emergency SOS transmitted to Platform Admin with GPS (${lat.toFixed(4)}° N, ${lng.toFixed(4)}° E).`
+        );
+        setSosMessage('');
+      } catch (err) {
+        setSosStatusFeedback(err instanceof Error ? err.message : 'Failed to dispatch SOS alert.');
+      } finally {
+        setSosDispatching(false);
+      }
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          dispatchWithCoords(
+            pos.coords.latitude,
+            pos.coords.longitude,
+            activeRide
+              ? `Live Captain GPS (${activeRide.fromCity} → ${activeRide.toCity})`
+              : `Live Captain GPS (${driverProfile.city})`
+          );
+        },
+        () => {
+          const fallbackLat = activeLive?.lat ?? activeRide?.pickupLat ?? defaultCityCoords.lat;
+          const fallbackLng = activeLive?.lng ?? activeRide?.pickupLng ?? defaultCityCoords.lng;
+          dispatchWithCoords(
+            fallbackLat,
+            fallbackLng,
+            activeRide
+              ? `Highway Corridor (${activeRide.fromCity} → ${activeRide.toCity})`
+              : `${driverProfile.city} Sector Coordinates`
+          );
+        },
+        { enableHighAccuracy: true, timeout: 4000 }
+      );
+    } else {
+      const fallbackLat = activeLive?.lat ?? activeRide?.pickupLat ?? defaultCityCoords.lat;
+      const fallbackLng = activeLive?.lng ?? activeRide?.pickupLng ?? defaultCityCoords.lng;
+      await dispatchWithCoords(
+        fallbackLat,
+        fallbackLng,
+        activeRide
+          ? `Highway Corridor (${activeRide.fromCity} → ${activeRide.toCity})`
+          : `${driverProfile.city} Sector Coordinates`
+      );
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       {/* Left Driver Sidebar */}
@@ -424,6 +509,19 @@ export default function DriverPortal({
             <span className="font-sans">Experience</span>
             <span className="font-semibold text-slate-900">{driverProfile.drivingExperienceYears} Yrs</span>
           </div>
+        </div>
+
+        <div className="pt-4 border-t border-slate-200">
+          <button
+            onClick={() => {
+              setSosStatusFeedback(null);
+              setSosModalOpen(true);
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-colors whitespace-nowrap"
+          >
+            <ShieldAlert className="w-4 h-4" />
+            <span>SOS EMERGENCY ALERT</span>
+          </button>
         </div>
       </aside>
 
@@ -639,12 +737,32 @@ export default function DriverPortal({
                                 {r.status === 'active' ? 'Update Live GPS' : 'Start Ride & Share GPS'}
                               </button>
 
-                              <button
-                                onClick={() => completeRideAndStopTracking(r, rideBookings, driverProfile)}
-                                className="px-3.5 py-2 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
-                              >
-                                End & Complete Ride
-                              </button>
+                                {confirmCompleteRideId === r.id ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      onClick={async () => {
+                                        await completeRideAndStopTracking(r, rideBookings, driverProfile);
+                                        setConfirmCompleteRideId(null);
+                                      }}
+                                      className="px-3 py-1.5 text-xs font-bold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
+                                    >
+                                      Confirm End Ride
+                                    </button>
+                                    <button
+                                      onClick={() => setConfirmCompleteRideId(null)}
+                                      className="px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setConfirmCompleteRideId(r.id)}
+                                    className="px-3.5 py-2 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
+                                  >
+                                    End & Complete Ride
+                                  </button>
+                                )}
                             </>
                           )}
                         </div>
@@ -1222,6 +1340,69 @@ export default function DriverPortal({
                 <span className="text-slate-500 font-sans">Member Since: </span>
                 <span>{inspectedPassenger.memberSince}</span>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Driver SOS Emergency Modal */}
+      {sosModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-rose-200 rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2.5 text-rose-700">
+                <ShieldAlert className="w-5 h-5 shrink-0" />
+                <h3 className="text-base font-bold text-slate-900">
+                  Captain SOS Emergency Alert
+                </h3>
+              </div>
+              <button
+                onClick={() => setSosModalOpen(false)}
+                className="text-xs text-slate-500 hover:text-slate-900"
+              >
+                Close
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              This will immediately transmit your live vehicle/device GPS coordinates, contact phone, and active corridor ride details to Central Platform Administration.
+            </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Emergency Situation Note (Optional)
+              </label>
+              <input
+                type="text"
+                value={sosMessage}
+                onChange={(e) => setSosMessage(e.target.value)}
+                placeholder="e.g. Highway breakdown, flat tire, security or medical incident..."
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-rose-600"
+              />
+            </div>
+
+            {sosStatusFeedback && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-900 font-medium">
+                {sosStatusFeedback}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setSosModalOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDriverSOS}
+                disabled={sosDispatching}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 rounded-lg transition-colors whitespace-nowrap"
+              >
+                {sosDispatching ? 'Acquiring GPS & Sending...' : 'Send SOS & Share Live GPS'}
+              </button>
             </div>
           </div>
         </div>

@@ -212,9 +212,26 @@ service cloud.firestore {
         isValidId(data.senderUid) &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
         data.message is string && data.message.size() >= 1 && data.message.size() <= 400 &&
-        data.type is string && data.type in ['booking', 'ride', 'verification', 'system', 'tracking'] &&
+        data.type is string && data.type in ['booking', 'ride', 'verification', 'system', 'tracking', 'sos'] &&
         data.read is bool &&
         data.relatedId is string && data.relatedId.size() <= 128 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSOSAlert(data) {
+      return data.keys().hasAll(['senderUid', 'senderName', 'senderEmail', 'senderPhone', 'senderRole', 'lat', 'lng', 'locationLabel', 'rideId', 'message', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['senderUid', 'senderName', 'senderEmail', 'senderPhone', 'senderRole', 'lat', 'lng', 'locationLabel', 'rideId', 'message', 'status', 'createdAt', 'updatedAt']) &&
+        isValidId(data.senderUid) &&
+        data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 100 &&
+        data.senderEmail is string && data.senderEmail.size() <= 150 &&
+        data.senderPhone is string && data.senderPhone.size() <= 30 &&
+        data.senderRole is string && data.senderRole in ['passenger', 'driver'] &&
+        data.lat is number && data.lng is number &&
+        data.locationLabel is string && data.locationLabel.size() <= 200 &&
+        data.rideId is string && data.rideId.size() <= 128 &&
+        data.message is string && data.message.size() >= 1 && data.message.size() <= 400 &&
+        data.status is string && data.status in ['active', 'resolved'] &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -433,6 +450,26 @@ service cloud.firestore {
           (existing().recipientUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['read', 'updatedAt']))
         );
       allow delete: if isVerifiedUser() && isValidId(notificationId) && (existing().recipientUid == request.auth.uid || isAdmin());
+    }
+
+    match /sosAlerts/{alertId} {
+      allow get: if isVerifiedUser() && isValidId(alertId) && (existing().senderUid == request.auth.uid || isAdmin());
+      allow list: if isVerifiedUser() && (
+        request.auth.token.email == 'yasiralilanjwani72@gmail.com' ||
+        resource.data.senderUid == request.auth.uid
+      );
+      allow create: if isVerifiedUser() && isValidId(alertId) && isValidSOSAlert(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        ((incoming().senderUid == request.auth.uid && incoming().status == 'active') || isAdmin());
+      allow update: if isVerifiedUser() && isValidId(alertId) && isValidSOSAlert(incoming()) &&
+        incoming().senderUid == existing().senderUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (existing().senderUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+      allow delete: if isAdmin() && isValidId(alertId);
     }
 
     match /auditLogs/{logId} {

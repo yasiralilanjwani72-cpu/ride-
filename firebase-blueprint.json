@@ -218,13 +218,34 @@
         "senderUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "title": { "type": "string", "minLength": 1, "maxLength": 120 },
         "message": { "type": "string", "minLength": 1, "maxLength": 400 },
-        "type": { "type": "string", "enum": ["booking", "ride", "verification", "system", "tracking"] },
+        "type": { "type": "string", "enum": ["booking", "ride", "verification", "system", "tracking", "sos"] },
         "read": { "type": "boolean" },
         "relatedId": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["recipientUid", "senderUid", "title", "message", "type", "read", "relatedId", "createdAt", "updatedAt"]
+    },
+    "SOSAlert": {
+      "title": "SOSAlert",
+      "description": "Emergency SOS alert triggered by a Passenger or Driver with current GPS location",
+      "type": "object",
+      "properties": {
+        "senderUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "senderEmail": { "type": "string", "maxLength": 150 },
+        "senderPhone": { "type": "string", "maxLength": 30 },
+        "senderRole": { "type": "string", "enum": ["passenger", "driver"] },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "locationLabel": { "type": "string", "maxLength": 200 },
+        "rideId": { "type": "string", "maxLength": 128 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "status": { "type": "string", "enum": ["active", "resolved"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderUid", "senderName", "senderEmail", "senderPhone", "senderRole", "lat", "lng", "locationLabel", "rideId", "message", "status", "createdAt", "updatedAt"]
     },
     "AuditLog": {
       "title": "AuditLog",
@@ -282,6 +303,10 @@
     "/notifications/{notificationId}": {
       "schema": "Notification",
       "description": "Real-time user notifications"
+    },
+    "/sosAlerts/{alertId}": {
+      "schema": "SOSAlert",
+      "description": "Emergency SOS alerts with live GPS coordinates for Admin response"
     },
     "/auditLogs/{logId}": {
       "schema": "AuditLog",
