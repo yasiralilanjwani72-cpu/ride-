@@ -8,6 +8,8 @@ import {
   LiveLocation,
   Review,
   PassengerProfile,
+  ChatMessage,
+  WalletTransaction,
   CITY_COORDINATES,
   VehicleType,
 } from '../types';
@@ -20,8 +22,16 @@ import {
   completeRideAndStopTracking,
   submitReview,
   triggerSOSAlert,
+  getPendingDurationHours,
+  isBookingPendingOver48Hours,
+  autoCancelStalePendingBookings,
 } from '../services/firestoreService';
 import LiveRideMap from './LiveRideMap';
+import RideChatPanel from './RideChatPanel';
+import RideWalletPanel from './RideWalletPanel';
+import DriverDocumentUploadModal, {
+  isRenderableImageSource,
+} from './DriverDocumentUploadModal';
 import {
   Car,
   PlusCircle,
@@ -35,6 +45,11 @@ import {
   CheckCircle2,
   MapPin,
   ShieldAlert,
+  AlertTriangle,
+  Clock,
+  MessageSquare,
+  Upload,
+  FileCheck2,
 } from 'lucide-react';
 import defaultDriverAvatar from '../assets/images/avatar_driver_pro_1791134254517.jpg';
 import defaultVehicleImg from '../assets/images/vehicle_sedan_white_1791134268066.jpg';
@@ -47,6 +62,8 @@ interface DriverPortalProps {
   bookings: Booking[];
   liveLocations: Record<string, LiveLocation>;
   reviews: Review[];
+  messages: ChatMessage[];
+  walletTransactions: WalletTransaction[];
   passengerProfiles: PassengerProfile[];
 }
 
@@ -58,11 +75,14 @@ export default function DriverPortal({
   bookings,
   liveLocations,
   reviews,
+  messages,
+  walletTransactions,
   passengerProfiles,
 }: DriverPortalProps) {
   const [activeTab, setActiveTab] = useState<
-    'rides' | 'requests' | 'tracking' | 'vehicle' | 'earnings' | 'profile' | 'reviews'
+    'rides' | 'requests' | 'messages' | 'tracking' | 'vehicle' | 'earnings' | 'profile' | 'reviews'
   >('rides');
+  const [selectedChatBookingId, setSelectedChatBookingId] = useState<string | null>(null);
 
   // Inspect Passenger Profile Modal
   const [inspectedPassenger, setInspectedPassenger] = useState<PassengerProfile | null>(null);
@@ -78,7 +98,28 @@ export default function DriverPortal({
   const [licenseNumber, setLicenseNumber] = useState(driverDocument?.licenseNumber || 'LHR-992817-HTV');
   const [licenseExpiry, setLicenseExpiry] = useState(driverDocument?.licenseExpiry || '2029-12-31');
   const [phone, setPhone] = useState(driverDocument?.phone || '+92 321 9876543');
+  const [cnicDocUrl, setCnicDocUrl] = useState(
+    driverDocument?.cnicDocUrl || 'https://rideconnect.docs/cnic.pdf'
+  );
+  const [licenseDocUrl, setLicenseDocUrl] = useState(
+    driverDocument?.licenseDocUrl || 'https://rideconnect.docs/license.pdf'
+  );
+  const [vehicleRegDocUrl, setVehicleRegDocUrl] = useState(
+    driverDocument?.vehicleRegDocUrl || 'https://rideconnect.docs/reg.pdf'
+  );
+  const [docVaultModalOpen, setDocVaultModalOpen] = useState(false);
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!driverDocument) return;
+    if (driverDocument.cnicNumber) setCnicNumber(driverDocument.cnicNumber);
+    if (driverDocument.licenseNumber) setLicenseNumber(driverDocument.licenseNumber);
+    if (driverDocument.licenseExpiry) setLicenseExpiry(driverDocument.licenseExpiry);
+    if (driverDocument.phone) setPhone(driverDocument.phone);
+    if (driverDocument.cnicDocUrl) setCnicDocUrl(driverDocument.cnicDocUrl);
+    if (driverDocument.licenseDocUrl) setLicenseDocUrl(driverDocument.licenseDocUrl);
+    if (driverDocument.vehicleRegDocUrl) setVehicleRegDocUrl(driverDocument.vehicleRegDocUrl);
+  }, [driverDocument]);
 
   // Vehicle Form
   const myVehicles = useMemo(
@@ -137,6 +178,75 @@ export default function DriverPortal({
     [bookings, driverProfile.uid]
   );
 
+  const unreadChatCount = useMemo(
+    () =>
+      messages.filter(
+        (m) =>
+          m.driverUid === driverProfile.uid &&
+          !m.read &&
+          m.senderUid !== driverProfile.uid
+      ).length,
+    [messages, driverProfile.uid]
+  );
+
+  // Background check & UI alert state for passenger bookings pending > 48 hours without driver confirmation
+  const [pendingCheckTick, setPendingCheckTick] = useState(() => Date.now());
+  const [simulate48hExpiry, setSimulate48hExpiry] = useState(false);
+  const [autoCancellingStale, setAutoCancellingStale] = useState(false);
+  const [staleCancelFeedback, setStaleCancelFeedback] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      setPendingCheckTick(Date.now());
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const myPendingBookings = useMemo(
+    () => myBookings.filter((b) => b.status === 'pending'),
+    [myBookings]
+  );
+
+  const stalePendingBookings = useMemo(() => {
+    const extraHours = simulate48hExpiry ? 49 : 0;
+    return myPendingBookings.filter((b) =>
+      isBookingPendingOver48Hours(b, extraHours, pendingCheckTick)
+    );
+  }, [myPendingBookings, simulate48hExpiry, pendingCheckTick]);
+
+  const handleAutoCancelAllStaleForDriver = async () => {
+    if (stalePendingBookings.length === 0) return;
+    setAutoCancellingStale(true);
+    setStaleCancelFeedback(null);
+    try {
+      const totalSeatsReleased = stalePendingBookings.reduce((sum, b) => sum + b.seatsBooked, 0);
+      const count = await autoCancelStalePendingBookings(
+        stalePendingBookings,
+        myRides,
+        'driver'
+      );
+      setStaleCancelFeedback(
+        `Auto-cancelled ${count} unconfirmed passenger request(s) (>48h pending) and released ${totalSeatsReleased} seat(s) back to ride inventory.`
+      );
+      setSimulate48hExpiry(false);
+    } finally {
+      setAutoCancellingStale(false);
+    }
+  };
+
+  const handleAutoCancelSingleStaleForDriver = async (booking: Booking) => {
+    setAutoCancellingStale(true);
+    setStaleCancelFeedback(null);
+    try {
+      await autoCancelStalePendingBookings([booking], myRides, 'driver');
+      setStaleCancelFeedback(
+        `Auto-cancelled ${booking.passengerName}'s expired pending request and released ${booking.seatsBooked} seat(s) on ${booking.fromCity} → ${booking.toCity}.`
+      );
+    } finally {
+      setAutoCancellingStale(false);
+    }
+  };
+
   const totalEarnings = useMemo(() => {
     return myBookings
       .filter((b) => b.status === 'completed' || b.status === 'confirmed' || b.status === 'accepted')
@@ -164,9 +274,12 @@ export default function DriverPortal({
           cnicNumber,
           licenseNumber,
           licenseExpiry,
-          vehicleRegDocUrl: driverDocument?.vehicleRegDocUrl || 'https://rideconnect.docs/reg.pdf',
-          cnicDocUrl: driverDocument?.cnicDocUrl || 'https://rideconnect.docs/cnic.pdf',
-          licenseDocUrl: driverDocument?.licenseDocUrl || 'https://rideconnect.docs/license.pdf',
+          vehicleRegDocUrl:
+            vehicleRegDocUrl || driverDocument?.vehicleRegDocUrl || 'https://rideconnect.docs/reg.pdf',
+          cnicDocUrl:
+            cnicDocUrl || driverDocument?.cnicDocUrl || 'https://rideconnect.docs/cnic.pdf',
+          licenseDocUrl:
+            licenseDocUrl || driverDocument?.licenseDocUrl || 'https://rideconnect.docs/license.pdf',
         }
       );
       setProfileMsg('Driver profile and verification documents updated.');
@@ -426,6 +539,25 @@ export default function DriverPortal({
           </button>
 
           <button
+            onClick={() => setActiveTab('messages')}
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
+              activeTab === 'messages'
+                ? 'bg-slate-900 text-white'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <span className="flex items-center gap-2.5">
+              <MessageSquare className="w-4 h-4" />
+              <span>Passenger Messenger</span>
+            </span>
+            {unreadChatCount > 0 ? (
+              <span className="font-mono text-emerald-500 font-bold">{unreadChatCount} new</span>
+            ) : (
+              <span className="font-mono">{messages.filter((m) => m.driverUid === driverProfile.uid).length}</span>
+            )}
+          </button>
+
+          <button
             onClick={() => setActiveTab('tracking')}
             className={`w-full flex items-center justify-between px-3.5 py-2.5 text-xs font-semibold rounded-lg transition-colors ${
               activeTab === 'tracking'
@@ -463,7 +595,10 @@ export default function DriverPortal({
           >
             <span className="flex items-center gap-2.5">
               <Wallet className="w-4 h-4" />
-              <span>Earnings & Ledger</span>
+              <span>Ride Wallet & Earnings</span>
+            </span>
+            <span className="font-mono text-emerald-600 font-bold">
+              Rs. {totalEarnings.toLocaleString()}
             </span>
           </button>
 
@@ -511,7 +646,16 @@ export default function DriverPortal({
           </div>
         </div>
 
-        <div className="pt-4 border-t border-slate-200">
+        <div className="pt-4 border-t border-slate-200 space-y-2">
+          <button
+            type="button"
+            onClick={() => setDocVaultModalOpen(true)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors whitespace-nowrap"
+          >
+            <Upload className="w-4 h-4" />
+            <span>UPLOAD / LINK DOCS</span>
+          </button>
+
           <button
             onClick={() => {
               setSosStatusFeedback(null);
@@ -527,15 +671,117 @@ export default function DriverPortal({
 
       {/* Main Content */}
       <main className="lg:col-span-9 space-y-6">
-        {driverProfile.verificationStatus !== 'verified' && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 text-xs text-amber-900">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold">Driver Verification Status: {driverProfile.verificationStatus.toUpperCase()}</span>
-              <p className="mt-0.5">
-                Only Verified Drivers can publish public long-distance rides. Ensure your CNIC and License details are submitted in the Driver Verification tab, then approve via the Admin Portal.
-              </p>
+        {/* Background Check Alert: Passenger Requests Pending > 48 Hours Without Confirmation */}
+        {(stalePendingBookings.length > 0 || myPendingBookings.length > 0 || staleCancelFeedback) && (
+          <div
+            role="alert"
+            className={`border rounded-xl p-5 space-y-3 ${
+              stalePendingBookings.length > 0
+                ? 'bg-amber-50 border-amber-300 text-amber-950'
+                : staleCancelFeedback
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                : 'bg-white border-slate-200 text-slate-800'
+            }`}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle
+                  className={`w-5 h-5 shrink-0 mt-0.5 ${
+                    stalePendingBookings.length > 0
+                      ? 'text-amber-600'
+                      : staleCancelFeedback
+                      ? 'text-emerald-600'
+                      : 'text-slate-500'
+                  }`}
+                />
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-sm font-bold">
+                      {stalePendingBookings.length > 0
+                        ? `48-Hour Unconfirmed Request Warning — ${stalePendingBookings.length} Request(s) Pending Over 48h`
+                        : staleCancelFeedback
+                        ? 'Expired Pending Requests Auto-Cancelled & Seat Inventory Restored'
+                        : `Captain SLA Monitor — ${myPendingBookings.length} Passenger Request(s) Awaiting Your Confirmation`}
+                    </h2>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-black/5 font-semibold">
+                      48h Seat Inventory Watchdog
+                    </span>
+                  </div>
+                  <p className="text-xs opacity-90 leading-relaxed">
+                    {stalePendingBookings.length > 0
+                      ? `${stalePendingBookings.length} passenger booking request(s) (${stalePendingBookings
+                          .map((b) => `${b.passengerName}: ${b.fromCity} → ${b.toCity} [${b.seatsBooked} seat(s)]`)
+                          .join(', ')}) have remained pending for more than 48 hours without confirmation. Auto-cancel now to release locked seat inventory or review in Passenger Requests.`
+                      : staleCancelFeedback
+                      ? staleCancelFeedback
+                      : 'Pending seat requests lock available seats on your ride. Requests unconfirmed after 48 hours are flagged for 1-click auto-cancellation and seat inventory recovery.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {stalePendingBookings.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={autoCancellingStale}
+                    onClick={handleAutoCancelAllStaleForDriver}
+                    className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white text-xs font-bold rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    {autoCancellingStale
+                      ? 'Releasing Seats...'
+                      : `Auto-Cancel & Release ${stalePendingBookings.reduce(
+                          (sum, b) => sum + b.seatsBooked,
+                          0
+                        )} Seat(s)`}
+                  </button>
+                )}
+
+                {myPendingBookings.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSimulate48hExpiry((prev) => !prev)}
+                    className="px-3 py-1.5 text-xs font-mono font-semibold border border-amber-400/80 bg-white/80 hover:bg-white text-slate-800 rounded-lg transition-colors whitespace-nowrap"
+                    title="Simulate >48 hours elapsed on current pending requests to test the 48h warning and seat release action"
+                  >
+                    {simulate48hExpiry ? 'Reset 48h Clock' : 'Simulate >48h Pending SLA'}
+                  </button>
+                )}
+
+                {staleCancelFeedback && (
+                  <button
+                    type="button"
+                    onClick={() => setStaleCancelFeedback(null)}
+                    className="px-2.5 py-1 text-xs font-medium text-emerald-800 hover:underline"
+                  >
+                    Dismiss
+                  </button>
+                )}
+              </div>
             </div>
+          </div>
+        )}
+
+        {driverProfile.verificationStatus !== 'verified' && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-900">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">
+                  Driver Verification Status: {driverProfile.verificationStatus.toUpperCase()}
+                </span>
+                <p className="mt-0.5">
+                  Only Verified Drivers can publish public long-distance rides. Upload or link your CNIC, Driving License, and Vehicle Registration images to Firestore for Admin verification.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDocVaultModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Upload / Link Documents</span>
+            </button>
           </div>
         )}
 
@@ -791,70 +1037,180 @@ export default function DriverPortal({
                 {myBookings.map((b) => {
                   const rideObj = myRides.find((r) => r.id === b.rideId);
                   const passProfile = passengerProfiles.find((p) => p.uid === b.passengerUid);
+                  const extraHours = simulate48hExpiry ? 49 : 0;
+                  const pendingHours =
+                    b.status === 'pending'
+                      ? getPendingDurationHours(b, pendingCheckTick) + extraHours
+                      : 0;
+                  const isStale48h =
+                    b.status === 'pending' &&
+                    isBookingPendingOver48Hours(b, extraHours, pendingCheckTick);
 
                   return (
-                    <div key={b.id} className="py-4 flex flex-wrap items-center justify-between gap-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-slate-900">{b.passengerName}</span>
-                          <span aria-hidden="true" className="text-slate-300">·</span>
-                          <span className="text-xs text-slate-500">{b.passengerCity}</span>
-                          <span aria-hidden="true" className="text-slate-300">·</span>
-                          <span className="text-xs font-mono text-slate-700">{b.passengerPhone}</span>
+                    <div key={b.id} className="py-4 space-y-2.5">
+                      {isStale48h && (
+                        <div className="bg-amber-50 border border-amber-300 rounded-lg px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-950">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>
+                              <strong>Unconfirmed for {pendingHours}h (&gt;48h SLA exceeded):</strong>{' '}
+                              {b.passengerName}&apos;s request is holding{' '}
+                              <strong>{b.seatsBooked} seat(s)</strong>. Confirm immediately or auto-cancel to release seats.
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={autoCancellingStale}
+                            onClick={() => handleAutoCancelSingleStaleForDriver(b)}
+                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-md transition-colors whitespace-nowrap"
+                          >
+                            Auto-Cancel &amp; Release {b.seatsBooked} Seat(s)
+                          </button>
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-900">{b.passengerName}</span>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
+                            <span className="text-xs text-slate-500">{b.passengerCity}</span>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
+                            <span className="text-xs font-mono text-slate-700">{b.passengerPhone}</span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-mono tabular-nums">
+                            <span>
+                              {b.fromCity} → {b.toCity}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span>{b.departureDate}</span>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-semibold text-slate-900">{b.seatsBooked} Seat(s)</span>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-semibold text-emerald-700">
+                              Rs. {b.totalFare.toLocaleString()}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span className="uppercase font-semibold">{b.status.replace(/_/g, ' ')}</span>
+                          </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-mono tabular-nums">
-                          <span>
-                            {b.fromCity} → {b.toCity}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span>{b.departureDate}</span>
-                          <span aria-hidden="true">·</span>
-                          <span className="font-semibold text-slate-900">{b.seatsBooked} Seat(s)</span>
-                          <span aria-hidden="true">·</span>
-                          <span className="font-semibold text-emerald-700">
-                            Rs. {b.totalFare.toLocaleString()}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span className="uppercase font-semibold">{b.status.replace(/_/g, ' ')}</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedChatBookingId(b.id);
+                              setActiveTab('messages');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors whitespace-nowrap"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>Message Passenger</span>
+                          </button>
+                          {passProfile && (
+                            <button
+                              onClick={() => setInspectedPassenger(passProfile)}
+                              className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap"
+                            >
+                              View Passenger Profile
+                            </button>
+                          )}
+
+                          {b.status === 'pending' && (
+                            <>
+                              <button
+                                onClick={() => updateBookingStatus(b, rideObj, 'confirmed')}
+                                className="px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors whitespace-nowrap"
+                              >
+                                Accept & Confirm
+                              </button>
+                              <button
+                                onClick={() => updateBookingStatus(b, rideObj, 'rejected')}
+                                className="px-3.5 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors whitespace-nowrap"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+
+                          {(b.status === 'confirmed' || b.status === 'accepted') && (
+                            <button
+                              onClick={() => updateBookingStatus(b, rideObj, 'cancelled_by_driver')}
+                              className="px-3 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors whitespace-nowrap"
+                            >
+                              Cancel Booking
+                            </button>
+                          )}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        {passProfile && (
-                          <button
-                            onClick={() => setInspectedPassenger(passProfile)}
-                            className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap"
+                      {/* Upgraded 6-Stage Captain Operational Workflow Stepper */}
+                      <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-slate-900 font-semibold">1. Seat Requested ✓</span>
+                          <span aria-hidden="true">→</span>
+                          <span
+                            className={
+                              b.status === 'confirmed' ||
+                              b.status === 'accepted' ||
+                              b.status === 'ride_started' ||
+                              b.status === 'completed'
+                                ? 'text-emerald-700 font-semibold'
+                                : b.status === 'rejected' ||
+                                  b.status === 'cancelled_by_passenger' ||
+                                  b.status === 'cancelled_by_driver'
+                                ? 'text-rose-600 font-semibold'
+                                : 'text-amber-700 font-semibold'
+                            }
                           >
-                            View Passenger Profile
-                          </button>
-                        )}
-
-                        {b.status === 'pending' && (
-                          <>
-                            <button
-                              onClick={() => updateBookingStatus(b, rideObj, 'confirmed')}
-                              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors whitespace-nowrap"
-                            >
-                              Accept & Confirm
-                            </button>
-                            <button
-                              onClick={() => updateBookingStatus(b, rideObj, 'rejected')}
-                              className="px-3.5 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors whitespace-nowrap"
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
-
-                        {(b.status === 'confirmed' || b.status === 'accepted') && (
+                            2.{' '}
+                            {b.status === 'pending'
+                              ? `Confirm (${pendingHours}h / 48h SLA)`
+                              : b.status === 'rejected' ||
+                                b.status === 'cancelled_by_passenger' ||
+                                b.status === 'cancelled_by_driver'
+                              ? b.status.replace(/_/g, ' ').toUpperCase()
+                              : 'Seat Confirmed ✓'}
+                          </span>
+                          <span aria-hidden="true">→</span>
                           <button
-                            onClick={() => updateBookingStatus(b, rideObj, 'cancelled_by_driver')}
-                            className="px-3 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors whitespace-nowrap"
+                            type="button"
+                            onClick={() => {
+                              setSelectedChatBookingId(b.id);
+                              setActiveTab('messages');
+                            }}
+                            className="hover:text-slate-900 underline decoration-dotted"
                           >
-                            Cancel Booking
+                            3. Coordinate Pickup
                           </button>
-                        )}
+                          <span aria-hidden="true">→</span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('tracking')}
+                            className={
+                              liveLocations[b.rideId]?.active
+                                ? 'text-emerald-700 font-semibold underline'
+                                : 'hover:text-slate-900 underline decoration-dotted'
+                            }
+                          >
+                            4. Broadcast Live GPS
+                          </button>
+                          <span aria-hidden="true">→</span>
+                          <span className={b.status === 'completed' ? 'text-emerald-700 font-semibold' : ''}>
+                            5. Complete Ride
+                          </span>
+                          <span aria-hidden="true">→</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedBookingForReview(b.id);
+                              setActiveTab('reviews');
+                            }}
+                            className="hover:text-slate-900 underline decoration-dotted"
+                          >
+                            6. Rate Passenger
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -862,6 +1218,18 @@ export default function DriverPortal({
               </div>
             )}
           </div>
+        )}
+
+        {activeTab === 'messages' && (
+          <RideChatPanel
+            currentUserUid={driverProfile.uid}
+            currentUserName={driverProfile.fullName}
+            currentUserRole="driver"
+            bookings={myBookings}
+            rides={myRides}
+            messages={messages}
+            initialSelectedBookingId={selectedChatBookingId}
+          />
         )}
 
         {activeTab === 'tracking' && (
@@ -1062,63 +1430,108 @@ export default function DriverPortal({
         )}
 
         {activeTab === 'earnings' && (
-          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Driver Earnings & Booking Ledger</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Financial breakdown of confirmed and completed intercity seat bookings.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 font-mono tabular-nums">
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                <div className="text-xs text-slate-500 font-sans">Total Confirmed/Completed Earnings</div>
-                <div className="text-2xl font-bold text-emerald-700 mt-1">
-                  Rs. {totalEarnings.toLocaleString()}
-                </div>
-              </div>
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                <div className="text-xs text-slate-500 font-sans">Completed Rides</div>
-                <div className="text-2xl font-bold text-slate-900 mt-1">
-                  {driverProfile.completedRides}
-                </div>
-              </div>
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                <div className="text-xs text-slate-500 font-sans">Active Seat Bookings</div>
-                <div className="text-2xl font-bold text-slate-900 mt-1">
-                  {myBookings.filter((b) => b.status === 'confirmed' || b.status === 'completed').length}
-                </div>
-              </div>
-            </div>
-
-            <div className="divide-y divide-slate-200">
-              {myBookings.map((b) => (
-                <div key={b.id} className="py-3.5 flex items-center justify-between text-xs font-mono tabular-nums">
-                  <div>
-                    <div className="font-sans font-bold text-slate-900">
-                      {b.fromCity} → {b.toCity} ({b.passengerName})
-                    </div>
-                    <div className="text-slate-500">
-                      {b.departureDate} · {b.seatsBooked} Seat(s) · {b.status.replace(/_/g, ' ')}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-bold text-slate-900">Rs. {b.totalFare.toLocaleString()}</div>
-                    <div className="text-emerald-700 uppercase">{b.paymentStatus}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <RideWalletPanel
+            userUid={driverProfile.uid}
+            userName={driverProfile.fullName}
+            userRole="driver"
+            bookings={myBookings}
+            rides={myRides}
+            walletTransactions={walletTransactions}
+          />
         )}
 
         {activeTab === 'profile' && (
           <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Driver Profile & Verification Documents</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Sensitive CNIC and License documents are stored in an isolated collection protected from public access.
-              </p>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Driver Profile & Verification Documents</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Sensitive CNIC, Driving License, and Vehicle Registration images are stored in an isolated Firestore collection protected from public access.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDocVaultModalOpen(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Open Document Upload Vault</span>
+              </button>
+            </div>
+
+            {/* Live Firestore Document Vault Summary */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
+                  <FileCheck2 className="w-4 h-4 text-emerald-600" />
+                  <span>Firestore Verification Vault (driverDocuments/{driverProfile.uid})</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDocVaultModalOpen(true)}
+                  className="text-xs font-semibold text-emerald-700 hover:underline"
+                >
+                  Manage / Replace Images →
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  {
+                    label: 'CNIC Identity Card',
+                    meta: cnicNumber,
+                    url: cnicDocUrl,
+                  },
+                  {
+                    label: 'Driving License Permit',
+                    meta: `${licenseNumber} (Exp: ${licenseExpiry})`,
+                    url: licenseDocUrl,
+                  },
+                  {
+                    label: 'Vehicle Registration',
+                    meta: primaryVehicle?.registrationNumber || regNumber,
+                    url: vehicleRegDocUrl,
+                  },
+                ].map((docItem) => {
+                  const renderable = isRenderableImageSource(docItem.url);
+                  return (
+                    <div
+                      key={docItem.label}
+                      onClick={() => setDocVaultModalOpen(true)}
+                      className="bg-white border border-slate-200 rounded-lg p-3 space-y-2 cursor-pointer hover:border-emerald-500 transition-colors"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-900">{docItem.label}</span>
+                        <span className="font-mono text-[11px] text-emerald-700 font-semibold">
+                          {docItem.url ? 'Synced ✓' : 'Missing'}
+                        </span>
+                      </div>
+                      {renderable ? (
+                        <div className="h-24 w-full rounded-md overflow-hidden bg-slate-950 border border-slate-200">
+                          <img
+                            src={docItem.url}
+                            alt={docItem.label}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <div className="h-24 w-full rounded-md bg-slate-100 border border-dashed border-slate-300 flex flex-col items-center justify-center p-2 text-center">
+                          <span className="text-[11px] font-mono text-slate-600 truncate max-w-full">
+                            {docItem.url || 'No image uploaded'}
+                          </span>
+                          <span className="text-[10px] text-emerald-700 font-semibold mt-1">
+                            Click to upload scan or link URL
+                          </span>
+                        </div>
+                      )}
+                      <div className="text-[11px] font-mono text-slate-500 truncate">
+                        {docItem.meta}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             <form onSubmit={handleSaveDriverProfile} className="space-y-4 max-w-2xl">
@@ -1407,6 +1820,26 @@ export default function DriverPortal({
           </div>
         </div>
       )}
+
+      {/* Driver Document Verification Upload & Link Modal */}
+      <DriverDocumentUploadModal
+        isOpen={docVaultModalOpen}
+        onClose={() => setDocVaultModalOpen(false)}
+        driverProfile={driverProfile}
+        driverDocument={driverDocument}
+        onSynced={(updated) => {
+          setCnicNumber(updated.cnicNumber);
+          setLicenseNumber(updated.licenseNumber);
+          setLicenseExpiry(updated.licenseExpiry);
+          setPhone(updated.phone);
+          setCnicDocUrl(updated.cnicDocUrl);
+          setLicenseDocUrl(updated.licenseDocUrl);
+          setVehicleRegDocUrl(updated.vehicleRegDocUrl);
+          setProfileMsg(
+            'CNIC, Driving License, and Vehicle Registration images synced to Firestore.'
+          );
+        }}
+      />
     </div>
   );
 }

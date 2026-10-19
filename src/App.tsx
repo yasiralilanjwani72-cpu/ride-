@@ -39,26 +39,39 @@ import {
   Review,
   AppNotification,
   SOSAlert,
+  TripShare,
+  FavoriteItem,
+  RecentSearch,
+  ChatMessage,
+  WalletTransaction,
   AuditLog,
 } from './types';
 import {
   initializeUserAccountAndProfile,
   switchUserRole,
   seedInitialPlatformDataIfEmpty,
+  seedUserWalletTransactionsIfEmpty,
 } from './services/firestoreService';
 import PassengerPortal from './components/PassengerPortal';
 import DriverPortal from './components/DriverPortal';
 import AdminPortal from './components/AdminPortal';
+import SharedTripView from './components/SharedTripView';
+import PlatformWorkflowOverview from './components/PlatformWorkflowOverview';
+import ThreePortalGateway from './components/ThreePortalGateway';
+import { useTheme } from './context/ThemeContext';
 import heroImg from './assets/images/hero_highway_ride_1791134239181.jpg';
 import driverAvatarImg from './assets/images/avatar_driver_pro_1791134254517.jpg';
 import sedanImg from './assets/images/vehicle_sedan_white_1791134268066.jpg';
-import { ShieldCheck, Navigation, Users, Car, Star, LogOut } from 'lucide-react';
+import { ShieldCheck, Navigation, Users, Car, Star, LogOut, Sun, Moon } from 'lucide-react';
 
 export default function App() {
+  const { isDark, toggleTheme } = useTheme();
   const [fbUser, setFbUser] = useState<FirebaseUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [selectedSignupRole, setSelectedSignupRole] = useState<UserRole>('passenger');
   const [activePortal, setActivePortal] = useState<'passenger' | 'driver' | 'admin'>('passenger');
+  const [showWorkflowPanel, setShowWorkflowPanel] = useState(false);
+  const [showPortalGateway, setShowPortalGateway] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
   // Real-time Firestore state
@@ -78,7 +91,16 @@ export default function App() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [sosAlerts, setSosAlerts] = useState<SOSAlert[]>([]);
+  const [tripShares, setTripShares] = useState<TripShare[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [sharedTripId, setSharedTripId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('share');
+  });
 
   const isBootstrappedAdmin = fbUser?.email === 'yasiralilanjwani72@gmail.com';
   const isAdmin = isBootstrappedAdmin || userAccount?.role === 'admin';
@@ -120,7 +142,7 @@ export default function App() {
           setUserAccount(account);
           if (user.email === 'yasiralilanjwani72@gmail.com' && selectedSignupRole === 'admin') {
             setActivePortal('admin');
-          } else if (account.role === 'driver') {
+          } else if (selectedSignupRole === 'driver' || account.role === 'driver') {
             setActivePortal('driver');
           } else {
             setActivePortal('passenger');
@@ -130,6 +152,7 @@ export default function App() {
             user.email || '',
             user.displayName || 'Muhammad Ali'
           );
+          await seedUserWalletTransactionsIfEmpty(user.uid);
         } catch (err) {
           console.error('Initialization error:', err);
         }
@@ -329,6 +352,58 @@ export default function App() {
 
       unsubs.push(
         onSnapshot(
+          collection(db, 'tripShares'),
+          (snap) => {
+            setTripShares(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<TripShare, 'id'>) })));
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'tripShares')
+        )
+      );
+
+      unsubs.push(
+        onSnapshot(
+          collection(db, 'favorites'),
+          (snap) => {
+            setFavorites(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<FavoriteItem, 'id'>) })));
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'favorites')
+        )
+      );
+
+      unsubs.push(
+        onSnapshot(
+          collection(db, 'recentSearches'),
+          (snap) => {
+            setRecentSearches(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<RecentSearch, 'id'>) })));
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'recentSearches')
+        )
+      );
+
+      unsubs.push(
+        onSnapshot(
+          collection(db, 'messages'),
+          (snap) => {
+            setMessages(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ChatMessage, 'id'>) })));
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'messages')
+        )
+      );
+
+      unsubs.push(
+        onSnapshot(
+          collection(db, 'walletTransactions'),
+          (snap) => {
+            setWalletTransactions(
+              snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<WalletTransaction, 'id'>) }))
+            );
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'walletTransactions')
+        )
+      );
+
+      unsubs.push(
+        onSnapshot(
           collection(db, 'auditLogs'),
           (snap) => {
             setAuditLogs(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AuditLog, 'id'>) })));
@@ -344,6 +419,82 @@ export default function App() {
             setSosAlerts(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<SOSAlert, 'id'>) })));
           },
           (err) => handleFirestoreError(err, OperationType.LIST, 'sosAlerts')
+        )
+      );
+
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, 'tripShares'), where('passengerUid', '==', uid)),
+          (snap) => {
+            setTripShares(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<TripShare, 'id'>) })));
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'tripShares')
+        )
+      );
+
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, 'favorites'), where('passengerUid', '==', uid)),
+          (snap) => {
+            setFavorites(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<FavoriteItem, 'id'>) })));
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'favorites')
+        )
+      );
+
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, 'recentSearches'), where('passengerUid', '==', uid)),
+          (snap) => {
+            setRecentSearches(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<RecentSearch, 'id'>) })));
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'recentSearches')
+        )
+      );
+
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, 'walletTransactions'), where('userUid', '==', uid)),
+          (snap) => {
+            setWalletTransactions(
+              snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<WalletTransaction, 'id'>) }))
+            );
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'walletTransactions')
+        )
+      );
+
+      // Non-admin: listen to passenger messages and driver messages separately and merge
+      let passMessages: ChatMessage[] = [];
+      let drvMessages: ChatMessage[] = [];
+
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, 'messages'), where('passengerUid', '==', uid)),
+          (snap) => {
+            passMessages = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ChatMessage, 'id'>) }));
+            const merged = [...passMessages];
+            drvMessages.forEach((dm) => {
+              if (!merged.some((m) => m.id === dm.id)) merged.push(dm);
+            });
+            setMessages(merged);
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'messages')
+        )
+      );
+
+      unsubs.push(
+        onSnapshot(
+          query(collection(db, 'messages'), where('driverUid', '==', uid)),
+          (snap) => {
+            drvMessages = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ChatMessage, 'id'>) }));
+            const merged = [...passMessages];
+            drvMessages.forEach((dm) => {
+              if (!merged.some((m) => m.id === dm.id)) merged.push(dm);
+            });
+            setMessages(merged);
+          },
+          (err) => handleFirestoreError(err, OperationType.LIST, 'messages')
         )
       );
 
@@ -449,69 +600,147 @@ export default function App() {
     }
   };
 
+  const handleOpenSharedTripPreview = (shareId: string) => {
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('share', shareId);
+      window.history.pushState({}, '', url.toString());
+    }
+    setSharedTripId(shareId);
+  };
+
+  const handleExitSharedTripView = () => {
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('share');
+      window.history.pushState({}, '', url.toString());
+    }
+    setSharedTripId(null);
+  };
+
+  if (sharedTripId) {
+    return (
+      <SharedTripView
+        shareId={sharedTripId}
+        onExitReadOnlyView={handleExitSharedTripView}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
       {/* Strict 3-Zone Top Bar Contract */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-slate-200 sticky top-0 z-40">
+      <header className="flex items-center justify-between px-6 py-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40 transition-colors">
         {/* Zone 1: Single text element wordmark */}
-        <a href="#top" className="text-xl font-bold tracking-tight text-slate-900 font-display">
+        <a href="#top" className="text-xl font-bold tracking-tight text-slate-900 dark:text-white font-display">
           Ride Connect
         </a>
 
         {/* Zone 2: 4-5 clean text navigation links */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
+        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-300">
           <button
-            onClick={() => fbUser && handlePortalSwitch('passenger')}
-            className={`hover:text-slate-900 transition-colors whitespace-nowrap ${
+            onClick={() => (fbUser ? handlePortalSwitch('passenger') : handleLogin('passenger'))}
+            className={`hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap ${
               activePortal === 'passenger' && fbUser
-                ? 'text-slate-900 underline underline-offset-8 decoration-2 decoration-emerald-600'
+                ? 'text-slate-900 dark:text-white underline underline-offset-8 decoration-2 decoration-emerald-600'
                 : ''
             }`}
           >
             Passenger Portal
           </button>
           <button
-            onClick={() => fbUser && handlePortalSwitch('driver')}
-            className={`hover:text-slate-900 transition-colors whitespace-nowrap ${
+            onClick={() => (fbUser ? handlePortalSwitch('driver') : handleLogin('driver'))}
+            className={`hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap ${
               activePortal === 'driver' && fbUser
-                ? 'text-slate-900 underline underline-offset-8 decoration-2 decoration-emerald-600'
+                ? 'text-slate-900 dark:text-white underline underline-offset-8 decoration-2 decoration-emerald-600'
                 : ''
             }`}
           >
             Driver Portal
           </button>
-          {isAdmin && (
+          {(!fbUser || isAdmin) && (
             <button
-              onClick={() => fbUser && handlePortalSwitch('admin')}
-              className={`hover:text-slate-900 transition-colors whitespace-nowrap ${
+              onClick={() => (fbUser ? handlePortalSwitch('admin') : handleLogin('admin'))}
+              className={`hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap ${
                 activePortal === 'admin' && fbUser
-                  ? 'text-slate-900 underline underline-offset-8 decoration-2 decoration-emerald-600'
+                  ? 'text-slate-900 dark:text-white underline underline-offset-8 decoration-2 decoration-emerald-600'
                   : ''
               }`}
             >
               Admin Portal
             </button>
           )}
-          <a href="#workflow" className="hover:text-slate-900 transition-colors whitespace-nowrap">
+          <button
+            type="button"
+            onClick={() => {
+              if (fbUser) {
+                setShowPortalGateway((prev) => !prev);
+              } else {
+                document.getElementById('three-portals')?.scrollIntoView({ behavior: 'smooth' });
+              }
+            }}
+            className={`hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap ${
+              showPortalGateway && fbUser
+                ? 'text-slate-900 dark:text-white underline underline-offset-8 decoration-2 decoration-emerald-600'
+                : ''
+            }`}
+          >
+            All 3 Portals
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (fbUser) {
+                setShowWorkflowPanel((prev) => !prev);
+              } else {
+                document.getElementById('workflow')?.scrollIntoView({ behavior: 'smooth' });
+              }
+            }}
+            className={`hover:text-slate-900 dark:hover:text-white transition-colors whitespace-nowrap ${
+              showWorkflowPanel && fbUser
+                ? 'text-slate-900 dark:text-white underline underline-offset-8 decoration-2 decoration-emerald-600'
+                : ''
+            }`}
+          >
             Platform Flow
-          </a>
+          </button>
         </nav>
 
-        {/* Zone 3: 1-2 Primary Actions */}
-        <div className="flex items-center gap-3">
+        {/* Zone 3: Primary Actions + System-Wide Dark Mode Toggle */}
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg transition-colors whitespace-nowrap"
+          >
+            {isDark ? (
+              <>
+                <Sun className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Light Mode</span>
+              </>
+            ) : (
+              <>
+                <Moon className="w-3.5 h-3.5 text-slate-700" />
+                <span className="hidden sm:inline">Dark Mode</span>
+              </>
+            )}
+          </button>
+
           {fbUser ? (
             <>
               <button
                 onClick={() =>
                   handlePortalSwitch(activePortal === 'passenger' ? 'driver' : 'passenger')
                 }
-                className="px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors whitespace-nowrap"
+                className="px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors whitespace-nowrap"
               >
                 Switch to {activePortal === 'passenger' ? 'Driver' : 'Passenger'}
               </button>
               <button
                 onClick={() => signOut(auth)}
-                className="px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
+                className="px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 dark:bg-emerald-600 rounded-lg hover:bg-slate-800 dark:hover:bg-emerald-500 transition-colors whitespace-nowrap"
               >
                 Sign Out
               </button>
@@ -519,7 +748,7 @@ export default function App() {
           ) : (
             <button
               onClick={() => handleLogin('passenger')}
-              className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
+              className="px-4 py-2 text-xs font-semibold text-white bg-slate-900 dark:bg-emerald-600 rounded-lg hover:bg-slate-800 dark:hover:bg-emerald-500 transition-colors whitespace-nowrap"
             >
               Sign In with Google
             </button>
@@ -585,6 +814,15 @@ export default function App() {
                 )}
               </div>
             </section>
+
+            {/* Three Dedicated Portals Gateway (Passenger Portal, Driver Portal, Admin Login Portal) */}
+            <ThreePortalGateway
+              isAuthenticated={false}
+              activePortal={activePortal}
+              isAdmin={false}
+              onSelectPortal={handlePortalSwitch}
+              onLoginForPortal={handleLogin}
+            />
 
             {/* Driver & Vehicle Profile Preview Section (Claim-to-Proof Adjacency) */}
             <section id="workflow" className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
@@ -659,22 +897,53 @@ export default function App() {
                 </div>
               </div>
             </section>
+
+            {/* Upgraded 6-Stage End-to-End Platform Workflow Section */}
+            <PlatformWorkflowOverview
+              isAuthenticated={false}
+              activePortal={activePortal}
+              isAdmin={false}
+              rides={rides}
+              bookings={bookings}
+              liveLocations={liveLocations}
+              messages={messages}
+              recentSearches={recentSearches}
+              driverProfiles={driverProfiles}
+              onSwitchPortal={handlePortalSwitch}
+              onLoginRole={handleLogin}
+            />
           </div>
         ) : (
           /* Authenticated Multi-Portal Workspace */
           <div className="space-y-6">
             {/* Mobile / Tablet Portal Switcher Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 rounded-xl px-5 py-3">
-              <div className="flex items-center gap-2 text-xs text-slate-600">
-                <span className="font-semibold text-slate-900">Active Workspace:</span>
-                <span className="uppercase font-mono font-semibold text-emerald-700">
+            <div className="flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-5 py-3">
+              <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                <span className="font-semibold text-slate-900 dark:text-white">Active Workspace:</span>
+                <span className="uppercase font-mono font-semibold text-emerald-700 dark:text-emerald-400">
                   {activePortal} Portal
                 </span>
                 <span aria-hidden="true">·</span>
                 <span>Signed in as {fbUser.email}</span>
+                <span aria-hidden="true">·</span>
+                <button
+                  type="button"
+                  onClick={() => setShowPortalGateway((prev) => !prev)}
+                  className="font-semibold text-emerald-700 dark:text-emerald-400 underline hover:text-emerald-800"
+                >
+                  {showPortalGateway ? 'Hide 3-Portal Directory' : '3-Portal Hub'}
+                </button>
+                <span aria-hidden="true">·</span>
+                <button
+                  type="button"
+                  onClick={() => setShowWorkflowPanel((prev) => !prev)}
+                  className="font-semibold text-slate-800 dark:text-slate-200 underline hover:text-emerald-700"
+                >
+                  {showWorkflowPanel ? 'Hide 6-Stage Workflow' : 'View 6-Stage Platform Workflow'}
+                </button>
               </div>
 
-              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg" role="tablist" aria-label="Workspace Portals">
+              <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg" role="tablist" aria-label="Workspace Portals">
                 <button
                   role="tab"
                   aria-selected={activePortal === 'passenger'}
@@ -682,8 +951,8 @@ export default function App() {
                   onClick={() => handlePortalSwitch('passenger')}
                   className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
                     activePortal === 'passenger'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   Passenger Portal <span className="hidden sm:inline font-mono text-[10px] text-slate-400 ml-1">Alt+1</span>
@@ -695,8 +964,8 @@ export default function App() {
                   onClick={() => handlePortalSwitch('driver')}
                   className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
                     activePortal === 'driver'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                      ? 'bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   Driver Portal <span className="hidden sm:inline font-mono text-[10px] text-slate-400 ml-1">Alt+2</span>
@@ -709,8 +978,8 @@ export default function App() {
                     onClick={() => handlePortalSwitch('admin')}
                     className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
                       activePortal === 'admin'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                        ? 'bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
                     Admin Portal <span className="hidden sm:inline font-mono text-[10px] text-slate-400 ml-1">Alt+3</span>
@@ -718,6 +987,38 @@ export default function App() {
                 )}
               </div>
             </div>
+
+            {showPortalGateway && (
+              <div className="bg-white border border-slate-200 rounded-xl p-6">
+                <ThreePortalGateway
+                  isAuthenticated={true}
+                  activePortal={activePortal}
+                  isAdmin={isAdmin}
+                  userEmail={fbUser.email || ''}
+                  onSelectPortal={(portal) => {
+                    handlePortalSwitch(portal);
+                    setShowPortalGateway(false);
+                  }}
+                  onLoginForPortal={handleLogin}
+                />
+              </div>
+            )}
+
+            {showWorkflowPanel && (
+              <PlatformWorkflowOverview
+                isAuthenticated={true}
+                activePortal={activePortal}
+                isAdmin={isAdmin}
+                rides={rides}
+                bookings={bookings}
+                liveLocations={liveLocations}
+                messages={messages}
+                recentSearches={recentSearches}
+                driverProfiles={driverProfiles}
+                onSwitchPortal={handlePortalSwitch}
+                onClose={() => setShowWorkflowPanel(false)}
+              />
+            )}
 
             {activePortal === 'passenger' && myPassengerProfile && (
               <PassengerPortal
@@ -729,7 +1030,13 @@ export default function App() {
                 liveLocations={liveLocations}
                 reviews={reviews}
                 notifications={notifications}
+                tripShares={tripShares}
+                favorites={favorites}
+                recentSearches={recentSearches}
+                messages={messages}
+                walletTransactions={walletTransactions}
                 onMarkNotificationRead={handleMarkNotificationRead}
+                onOpenSharedTripPreview={handleOpenSharedTripPreview}
               />
             )}
 
@@ -742,6 +1049,8 @@ export default function App() {
                 bookings={bookings}
                 liveLocations={liveLocations}
                 reviews={reviews}
+                messages={messages}
+                walletTransactions={walletTransactions}
                 passengerProfiles={
                   passengerProfiles.length > 0
                     ? passengerProfiles
@@ -764,6 +1073,9 @@ export default function App() {
                 liveLocations={liveLocations}
                 reviews={reviews}
                 sosAlerts={sosAlerts}
+                recentSearches={recentSearches}
+                favorites={favorites}
+                walletTransactions={walletTransactions}
                 auditLogs={auditLogs}
               />
             )}

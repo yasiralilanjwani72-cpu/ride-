@@ -31,6 +31,11 @@ import {
   LiveLocation,
   Review,
   SOSAlert,
+  TripShare,
+  FavoriteItem,
+  RecentSearch,
+  ChatMessage,
+  WalletTransaction,
   CITY_COORDINATES,
 } from '../types';
 import defaultDriverAvatar from '../assets/images/avatar_driver_pro_1791134254517.jpg';
@@ -155,6 +160,43 @@ export async function triggerSOSAlert(params: {
   }
 }
 
+export async function acknowledgeSOSAlert(alert: SOSAlert) {
+  const path = `sosAlerts/${alert.id}`;
+  try {
+    await updateDoc(doc(db, 'sosAlerts', alert.id), {
+      senderUid: alert.senderUid,
+      senderName: alert.senderName,
+      senderEmail: alert.senderEmail,
+      senderPhone: alert.senderPhone,
+      senderRole: alert.senderRole,
+      lat: alert.lat,
+      lng: alert.lng,
+      locationLabel: alert.locationLabel,
+      rideId: alert.rideId,
+      message: alert.message,
+      status: 'acknowledged',
+      updatedAt: serverTimestamp(),
+    });
+
+    await sendNotification(
+      alert.senderUid,
+      'SOS Alert Acknowledged by Admin',
+      `Central Admin Command has acknowledged your SOS emergency signal at ${alert.locationLabel} (${alert.lat.toFixed(4)}° N, ${alert.lng.toFixed(4)}° E) and is coordinating immediate response.`,
+      'sos',
+      alert.id
+    );
+
+    await logAuditAction(
+      'ACKNOWLEDGE_SOS_ALERT',
+      'sosAlert',
+      alert.id,
+      `Admin acknowledged SOS alert for ${alert.senderName} at (${alert.lat.toFixed(4)}, ${alert.lng.toFixed(4)})`
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
 export async function resolveSOSAlert(alert: SOSAlert) {
   const path = `sosAlerts/${alert.id}`;
   try {
@@ -189,6 +231,344 @@ export async function resolveSOSAlert(alert: SOSAlert) {
     );
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function createTripShareLink(params: {
+  booking: Booking;
+  ride?: Ride;
+  liveLocation?: LiveLocation;
+  contactLabel: string;
+  durationHours?: number;
+}): Promise<string> {
+  const shareId = generateSafeId('share');
+  const path = `tripShares/${shareId}`;
+  const { booking, ride, liveLocation, contactLabel, durationHours = 6 } = params;
+
+  const defaultOrigin = CITY_COORDINATES[booking.fromCity] || CITY_COORDINATES.Karachi;
+  const defaultDest = CITY_COORDINATES[booking.toCity] || CITY_COORDINATES.Hyderabad;
+
+  const pickupLat = liveLocation?.pickupLat ?? ride?.pickupLat ?? defaultOrigin.lat;
+  const pickupLng = liveLocation?.pickupLng ?? ride?.pickupLng ?? defaultOrigin.lng;
+  const destLat = liveLocation?.destLat ?? ride?.destLat ?? defaultDest.lat;
+  const destLng = liveLocation?.destLng ?? ride?.destLng ?? defaultDest.lng;
+  const lat = liveLocation?.lat ?? pickupLat;
+  const lng = liveLocation?.lng ?? pickupLng;
+  const speedKmh = liveLocation?.speedKmh ?? 82;
+  const distanceRemainingKm = liveLocation?.distanceRemainingKm ?? 9.2;
+  const etaMinutes = liveLocation?.etaMinutes ?? 16;
+
+  const expiresDate = new Date(Date.now() + durationHours * 3600 * 1000);
+  const expiresAtIso = expiresDate.toISOString();
+
+  try {
+    await setDoc(doc(db, 'tripShares', shareId), {
+      bookingId: sanitizeString(booking.id, VALIDATION_LIMITS.ID_MAX),
+      rideId: sanitizeString(booking.rideId, VALIDATION_LIMITS.ID_MAX),
+      passengerUid: sanitizeString(booking.passengerUid, VALIDATION_LIMITS.ID_MAX),
+      passengerName: sanitizeString(booking.passengerName, VALIDATION_LIMITS.NAME_MAX),
+      driverName: sanitizeString(booking.driverName, VALIDATION_LIMITS.NAME_MAX),
+      vehicleName: sanitizeString(ride?.vehicleName || liveLocation?.vehicleName || 'Verified Intercity Sedan', 120),
+      fromCity: sanitizeString(booking.fromCity, VALIDATION_LIMITS.CITY_MAX),
+      toCity: sanitizeString(booking.toCity, VALIDATION_LIMITS.CITY_MAX),
+      pickupLocation: sanitizeString(
+        ride?.pickupLocation || liveLocation?.pickupLocation || booking.fromCity,
+        VALIDATION_LIMITS.LOCATION_MAX
+      ),
+      destinationLocation: sanitizeString(
+        ride?.destinationLocation || liveLocation?.destinationLocation || booking.toCity,
+        VALIDATION_LIMITS.LOCATION_MAX
+      ),
+      departureDate: sanitizeString(booking.departureDate, 30),
+      departureTime: sanitizeString(booking.departureTime, 30),
+      lat: Number(lat),
+      lng: Number(lng),
+      pickupLat: Number(pickupLat),
+      pickupLng: Number(pickupLng),
+      destLat: Number(destLat),
+      destLng: Number(destLng),
+      speedKmh: Number(speedKmh),
+      distanceRemainingKm: Number(distanceRemainingKm),
+      etaMinutes: Number(etaMinutes),
+      contactLabel: sanitizeString(contactLabel || 'Emergency Family Contact', 100),
+      expiresAtIso: sanitizeString(expiresAtIso, 60),
+      status: 'active',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    await sendNotification(
+      booking.passengerUid,
+      'Trip Share Link Generated',
+      `Temporary read-only live GPS link created for ${sanitizeString(contactLabel || 'Family Contact', 60)} (${booking.fromCity} → ${booking.toCity}).`,
+      'tracking',
+      shareId
+    );
+
+    await logAuditAction(
+      'CREATE_TRIP_SHARE',
+      'tripShare',
+      shareId,
+      `Created temporary read-only trip share link for booking ${booking.id}`
+    );
+
+    return shareId;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function revokeTripShareLink(share: TripShare) {
+  const path = `tripShares/${share.id}`;
+  try {
+    await updateDoc(doc(db, 'tripShares', share.id), {
+      status: 'revoked',
+      lat: share.lat,
+      lng: share.lng,
+      speedKmh: share.speedKmh,
+      distanceRemainingKm: share.distanceRemainingKm,
+      etaMinutes: share.etaMinutes,
+      updatedAt: serverTimestamp(),
+    });
+
+    await logAuditAction(
+      'REVOKE_TRIP_SHARE',
+      'tripShare',
+      share.id,
+      `Revoked trip share link ${share.id}`
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function syncTripShareCoordinates(
+  share: TripShare,
+  coords: {
+    lat: number;
+    lng: number;
+    speedKmh: number;
+    distanceRemainingKm: number;
+    etaMinutes: number;
+  }
+) {
+  const path = `tripShares/${share.id}`;
+  try {
+    await updateDoc(doc(db, 'tripShares', share.id), {
+      status: share.status,
+      lat: Number(coords.lat),
+      lng: Number(coords.lng),
+      speedKmh: Number(coords.speedKmh),
+      distanceRemainingKm: Number(coords.distanceRemainingKm),
+      etaMinutes: Number(coords.etaMinutes),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function saveFavoriteItem(params: {
+  passengerUid: string;
+  favoriteType: 'route' | 'driver';
+  fromCity: string;
+  toCity: string;
+  driverUid: string;
+  driverName: string;
+  driverPhoto: string;
+  driverRating: number;
+  vehicleName: string;
+  farePerSeat: number;
+  note?: string;
+}): Promise<string | undefined> {
+  const favoriteId = generateSafeId('fav');
+  const path = `favorites/${favoriteId}`;
+  try {
+    await setDoc(doc(db, 'favorites', favoriteId), {
+      passengerUid: sanitizeString(params.passengerUid, VALIDATION_LIMITS.ID_MAX),
+      favoriteType: params.favoriteType,
+      fromCity: sanitizeString(params.fromCity, VALIDATION_LIMITS.CITY_MAX),
+      toCity: sanitizeString(params.toCity, VALIDATION_LIMITS.CITY_MAX),
+      driverUid: sanitizeString(params.driverUid, VALIDATION_LIMITS.ID_MAX),
+      driverName: sanitizeString(params.driverName, VALIDATION_LIMITS.NAME_MAX),
+      driverPhoto: sanitizeString(params.driverPhoto || defaultDriverAvatar, VALIDATION_LIMITS.URL_MAX),
+      driverRating: Math.min(5, Math.max(0, Number(params.driverRating) || 4.9)),
+      vehicleName: sanitizeString(params.vehicleName, 120),
+      farePerSeat: Math.max(0, Number(params.farePerSeat) || 0),
+      note: sanitizeString(params.note || 'Saved to Passenger Favorites', 200),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    await logAuditAction(
+      'SAVE_FAVORITE',
+      'favorite',
+      favoriteId,
+      `Saved favorite ${params.favoriteType}: ${
+        params.favoriteType === 'route' ? `${params.fromCity} -> ${params.toCity}` : params.driverName
+      }`
+    );
+
+    return favoriteId;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function removeFavoriteItem(favoriteId: string) {
+  const path = `favorites/${favoriteId}`;
+  try {
+    await deleteDoc(doc(db, 'favorites', favoriteId));
+    await logAuditAction('REMOVE_FAVORITE', 'favorite', favoriteId, `Removed favorite ${favoriteId}`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function saveRecentSearch(params: {
+  passengerUid: string;
+  fromCity: string;
+  toCity: string;
+  travelDate?: string;
+  minSeats?: number;
+  existingSearches?: RecentSearch[];
+}): Promise<string | undefined> {
+  const cleanFrom = sanitizeString(params.fromCity, VALIDATION_LIMITS.CITY_MAX);
+  const cleanTo = sanitizeString(params.toCity, VALIDATION_LIMITS.CITY_MAX);
+  if (!cleanFrom || !cleanTo) return undefined;
+
+  const cleanDate = sanitizeString(params.travelDate || '', 30);
+  const cleanSeats = Math.min(20, Math.max(1, Number(params.minSeats) || 1));
+
+  // Deduplicate if same passenger already searched same From, To, and Date
+  const duplicate = (params.existingSearches || []).find(
+    (s) =>
+      s.passengerUid === params.passengerUid &&
+      s.fromCity.toLowerCase() === cleanFrom.toLowerCase() &&
+      s.toCity.toLowerCase() === cleanTo.toLowerCase() &&
+      (s.travelDate || '') === cleanDate
+  );
+
+  if (duplicate) {
+    const updatePath = `recentSearches/${duplicate.id}`;
+    try {
+      await updateDoc(doc(db, 'recentSearches', duplicate.id), {
+        passengerUid: duplicate.passengerUid,
+        fromCity: cleanFrom,
+        toCity: cleanTo,
+        travelDate: cleanDate,
+        minSeats: cleanSeats,
+        updatedAt: serverTimestamp(),
+      });
+      return duplicate.id;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, updatePath);
+    }
+    return duplicate.id;
+  }
+
+  const searchId = generateSafeId('srch');
+  const path = `recentSearches/${searchId}`;
+  try {
+    await setDoc(doc(db, 'recentSearches', searchId), {
+      passengerUid: sanitizeString(params.passengerUid, VALIDATION_LIMITS.ID_MAX),
+      fromCity: cleanFrom,
+      toCity: cleanTo,
+      travelDate: cleanDate,
+      minSeats: cleanSeats,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return searchId;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function deleteRecentSearch(searchId: string) {
+  const path = `recentSearches/${searchId}`;
+  try {
+    await deleteDoc(doc(db, 'recentSearches', searchId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function clearAllRecentSearches(searches: RecentSearch[]) {
+  for (const item of searches) {
+    await deleteRecentSearch(item.id);
+  }
+}
+
+export async function sendChatMessage(params: {
+  rideId: string;
+  bookingId?: string;
+  fromCity: string;
+  toCity: string;
+  passengerUid: string;
+  passengerName: string;
+  driverUid: string;
+  driverName: string;
+  senderUid: string;
+  senderName: string;
+  senderRole: 'passenger' | 'driver';
+  text: string;
+}): Promise<string | undefined> {
+  const cleanText = sanitizeString(params.text, 500);
+  if (!cleanText) return undefined;
+
+  const messageId = generateSafeId('msg');
+  const path = `messages/${messageId}`;
+  try {
+    await setDoc(doc(db, 'messages', messageId), {
+      rideId: sanitizeString(params.rideId, VALIDATION_LIMITS.ID_MAX),
+      bookingId: sanitizeString(params.bookingId || '', VALIDATION_LIMITS.ID_MAX),
+      fromCity: sanitizeString(params.fromCity, VALIDATION_LIMITS.CITY_MAX),
+      toCity: sanitizeString(params.toCity, VALIDATION_LIMITS.CITY_MAX),
+      passengerUid: sanitizeString(params.passengerUid, VALIDATION_LIMITS.ID_MAX),
+      passengerName: sanitizeString(params.passengerName, VALIDATION_LIMITS.NAME_MAX),
+      driverUid: sanitizeString(params.driverUid, VALIDATION_LIMITS.ID_MAX),
+      driverName: sanitizeString(params.driverName, VALIDATION_LIMITS.NAME_MAX),
+      senderUid: sanitizeString(params.senderUid, VALIDATION_LIMITS.ID_MAX),
+      senderName: sanitizeString(params.senderName, VALIDATION_LIMITS.NAME_MAX),
+      senderRole: params.senderRole,
+      text: cleanText,
+      read: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    const recipientUid =
+      params.senderRole === 'passenger' ? params.driverUid : params.passengerUid;
+    if (recipientUid && recipientUid !== params.senderUid) {
+      await sendNotification(
+        recipientUid,
+        `New Ride Message from ${params.senderName}`,
+        `${params.fromCity} → ${params.toCity}: "${sanitizeString(cleanText, 90)}"`,
+        'ride',
+        params.rideId
+      );
+    }
+
+    return messageId;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function markChatMessagesAsRead(messages: ChatMessage[], viewerUid: string) {
+  for (const m of messages) {
+    if (!m.read && m.senderUid !== viewerUid) {
+      const path = `messages/${m.id}`;
+      try {
+        await updateDoc(doc(db, 'messages', m.id), {
+          read: true,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    }
   }
 }
 
@@ -385,21 +765,78 @@ export async function updateDriverProfileAndDocs(
     });
 
     if (docUpdates) {
-      await updateDoc(doc(db, 'driverDocuments', uid), {
-        email: sanitizeString(docUpdates.email, VALIDATION_LIMITS.EMAIL_MAX),
-        phone: sanitizeString(docUpdates.phone, VALIDATION_LIMITS.PHONE_MAX),
-        cnicNumber: sanitizeString(docUpdates.cnicNumber, 40),
-        licenseNumber: sanitizeString(docUpdates.licenseNumber, 50),
-        licenseExpiry: sanitizeString(docUpdates.licenseExpiry, 30),
-        vehicleRegDocUrl: sanitizeString(docUpdates.vehicleRegDocUrl, VALIDATION_LIMITS.URL_MAX),
-        cnicDocUrl: sanitizeString(docUpdates.cnicDocUrl, VALIDATION_LIMITS.URL_MAX),
-        licenseDocUrl: sanitizeString(docUpdates.licenseDocUrl, VALIDATION_LIMITS.URL_MAX),
-        updatedAt: serverTimestamp(),
-      });
+      await saveDriverVerificationDocuments(uid, docUpdates);
     }
     await logAuditAction('UPDATE_DRIVER_PROFILE', 'driverProfile', uid, 'Driver updated profile and verification documents');
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function saveDriverVerificationDocuments(
+  uid: string,
+  docUpdates: Partial<DriverDocument>
+) {
+  const path = `driverDocuments/${uid}`;
+  try {
+    const existingSnap = await getDoc(doc(db, 'driverDocuments', uid));
+    const currentEmail = auth.currentUser?.email || '';
+
+    if (existingSnap.exists()) {
+      const existingData = existingSnap.data() as DriverDocument;
+      await updateDoc(doc(db, 'driverDocuments', uid), {
+        email: sanitizeString(docUpdates.email ?? existingData.email ?? currentEmail, VALIDATION_LIMITS.EMAIL_MAX),
+        phone: sanitizeString(docUpdates.phone ?? existingData.phone, VALIDATION_LIMITS.PHONE_MAX),
+        cnicNumber: sanitizeString(docUpdates.cnicNumber ?? existingData.cnicNumber, 40),
+        licenseNumber: sanitizeString(docUpdates.licenseNumber ?? existingData.licenseNumber, 50),
+        licenseExpiry: sanitizeString(docUpdates.licenseExpiry ?? existingData.licenseExpiry, 30),
+        vehicleRegDocUrl: sanitizeString(
+          docUpdates.vehicleRegDocUrl ?? existingData.vehicleRegDocUrl,
+          VALIDATION_LIMITS.DOC_URL_MAX
+        ),
+        cnicDocUrl: sanitizeString(
+          docUpdates.cnicDocUrl ?? existingData.cnicDocUrl,
+          VALIDATION_LIMITS.DOC_URL_MAX
+        ),
+        licenseDocUrl: sanitizeString(
+          docUpdates.licenseDocUrl ?? existingData.licenseDocUrl,
+          VALIDATION_LIMITS.DOC_URL_MAX
+        ),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(doc(db, 'driverDocuments', uid), {
+        uid: sanitizeString(uid, VALIDATION_LIMITS.ID_MAX),
+        email: sanitizeString(docUpdates.email || currentEmail, VALIDATION_LIMITS.EMAIL_MAX),
+        phone: sanitizeString(docUpdates.phone || '+92 321 9876543', VALIDATION_LIMITS.PHONE_MAX),
+        cnicNumber: sanitizeString(docUpdates.cnicNumber || '42101-1234567-1', 40),
+        licenseNumber: sanitizeString(docUpdates.licenseNumber || 'LHR-992817-HTV', 50),
+        licenseExpiry: sanitizeString(docUpdates.licenseExpiry || '2029-12-31', 30),
+        vehicleRegDocUrl: sanitizeString(docUpdates.vehicleRegDocUrl || '', VALIDATION_LIMITS.DOC_URL_MAX),
+        cnicDocUrl: sanitizeString(docUpdates.cnicDocUrl || '', VALIDATION_LIMITS.DOC_URL_MAX),
+        licenseDocUrl: sanitizeString(docUpdates.licenseDocUrl || '', VALIDATION_LIMITS.DOC_URL_MAX),
+        adminNotes: 'Submitted via Captain Document Verification Vault.',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    await sendNotification(
+      uid,
+      'Verification Documents Synced to Vault',
+      'Your CNIC, Driving License, and Vehicle Registration images have been securely saved to your private verification vault.',
+      'verification',
+      uid
+    );
+
+    await logAuditAction(
+      'UPLOAD_DRIVER_DOCUMENTS',
+      'driverDocument',
+      uid,
+      'Driver uploaded/linked CNIC, Driving License, and Vehicle Registration images to Firestore'
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
@@ -655,6 +1092,62 @@ export async function updateBookingStatus(
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
+}
+
+export const PENDING_EXPIRY_HOURS = 48;
+
+export function getPendingDurationHours(booking: Booking, nowMs: number = Date.now()): number {
+  if (booking.status !== 'pending') return 0;
+  const created = booking.createdAt;
+  let createdMs = 0;
+
+  if (created && typeof created === 'object') {
+    if ('toMillis' in created && typeof (created as { toMillis: () => number }).toMillis === 'function') {
+      createdMs = (created as { toMillis: () => number }).toMillis();
+    } else if ('seconds' in created && typeof (created as { seconds: number }).seconds === 'number') {
+      createdMs = (created as { seconds: number }).seconds * 1000;
+    }
+  } else if (typeof created === 'string' || typeof created === 'number') {
+    const parsed = new Date(created).getTime();
+    if (!Number.isNaN(parsed)) createdMs = parsed;
+  }
+
+  if (!createdMs || createdMs > nowMs) return 0;
+  return Math.floor((nowMs - createdMs) / (1000 * 60 * 60));
+}
+
+export function isBookingPendingOver48Hours(
+  booking: Booking,
+  simulatedExtraHours = 0,
+  nowMs: number = Date.now()
+): boolean {
+  if (booking.status !== 'pending') return false;
+  return getPendingDurationHours(booking, nowMs) + simulatedExtraHours >= PENDING_EXPIRY_HOURS;
+}
+
+export async function autoCancelStalePendingBookings(
+  staleBookings: Booking[],
+  rides: Ride[],
+  actorRole: 'passenger' | 'driver'
+): Promise<number> {
+  const newStatus: Booking['status'] =
+    actorRole === 'passenger' ? 'cancelled_by_passenger' : 'rejected';
+  let cancelledCount = 0;
+
+  for (const b of staleBookings) {
+    if (b.status !== 'pending') continue;
+    const associatedRide = rides.find((r) => r.id === b.rideId);
+    await updateBookingStatus(b, associatedRide, newStatus);
+    await logAuditAction(
+      'AUTO_CANCEL_STALE_PENDING_BOOKING',
+      'booking',
+      b.id,
+      `Auto-cancelled unconfirmed booking ${b.id} (>48h pending) by ${actorRole} and released ${b.seatsBooked} seat(s)`
+    );
+    cancelledCount += 1;
+  }
+
+  return cancelledCount;
 }
 
 export async function startOrUpdateLiveRide(
@@ -958,6 +1451,113 @@ export async function adminDeleteReview(reviewId: string) {
     await logAuditAction('DELETE_REVIEW', 'review', reviewId, 'Removed inappropriate review');
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+// Ride Wallet & Transaction Ledger Operations
+export async function createWalletTransaction(input: {
+  userUid: string;
+  userRole: 'passenger' | 'driver';
+  type: 'credit' | 'debit';
+  category: WalletTransaction['category'];
+  amount: number;
+  title: string;
+  description: string;
+  paymentMethod: string;
+  referenceId?: string;
+  status?: WalletTransaction['status'];
+}) {
+  const txId = generateSafeId('wtx');
+  const path = `walletTransactions/${txId}`;
+  const cleanAmount = Math.min(1000000, Math.max(1, Math.round(Number(input.amount) || 500)));
+  const refId = sanitizeString(input.referenceId || generateSafeId('ref'), 128);
+
+  try {
+    await setDoc(doc(db, 'walletTransactions', txId), {
+      userUid: sanitizeString(input.userUid, VALIDATION_LIMITS.ID_MAX),
+      userRole: input.userRole,
+      type: input.type,
+      category: input.category,
+      amount: cleanAmount,
+      title: sanitizeString(input.title, 120),
+      description: sanitizeString(input.description, 300),
+      paymentMethod: sanitizeString(input.paymentMethod, 80),
+      referenceId: refId,
+      status: input.status || 'completed',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    await logAuditAction(
+      'WALLET_TRANSACTION',
+      'walletTransaction',
+      txId,
+      `${input.type.toUpperCase()} Rs. ${cleanAmount} (${input.category}) via ${input.paymentMethod}`
+    );
+    return txId;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function seedUserWalletTransactionsIfEmpty(uid: string) {
+  try {
+    const existingSnap = await getDocs(
+      query(collection(db, 'walletTransactions'), where('userUid', '==', uid))
+    );
+    if (!existingSnap.empty) return;
+
+    // 1. Passenger initial top-up & promo credit
+    const passTopupId = generateSafeId('wtx');
+    await setDoc(doc(db, 'walletTransactions', passTopupId), {
+      userUid: sanitizeString(uid, VALIDATION_LIMITS.ID_MAX),
+      userRole: 'passenger',
+      type: 'credit',
+      category: 'topup',
+      amount: 5000,
+      title: 'Initial Ride Wallet Top-Up',
+      description: 'Instant digital wallet deposit via RAAST Instant IBFT for intercity bookings',
+      paymentMethod: 'RAAST Instant IBFT',
+      referenceId: 'RAAST-884920',
+      status: 'completed',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    const passPromoId = generateSafeId('wtx');
+    await setDoc(doc(db, 'walletTransactions', passPromoId), {
+      userUid: sanitizeString(uid, VALIDATION_LIMITS.ID_MAX),
+      userRole: 'passenger',
+      type: 'credit',
+      category: 'promo_bonus',
+      amount: 500,
+      title: 'Verified Member Welcome Credit',
+      description: 'Promotional Ride Wallet credit for verified intercity passengers',
+      paymentMethod: 'Ride Connect Rewards',
+      referenceId: 'PROMO-WELCOME500',
+      status: 'completed',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    // 2. Driver initial settlement & payout foundation
+    const drvEarnId = generateSafeId('wtx');
+    await setDoc(doc(db, 'walletTransactions', drvEarnId), {
+      userUid: sanitizeString(uid, VALIDATION_LIMITS.ID_MAX),
+      userRole: 'driver',
+      type: 'credit',
+      category: 'driver_earning',
+      amount: 4500,
+      title: 'Intercity Route Settlement (Karachi → Hyderabad)',
+      description: '3 Confirmed Executive Seats @ Rs. 1,500/seat settled to Captain Ride Wallet',
+      paymentMethod: 'Ride Connect Escrow Settlement',
+      referenceId: 'RIDE-KHI-HYD-101',
+      status: 'completed',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn('Wallet seed check skipped:', err);
   }
 }
 

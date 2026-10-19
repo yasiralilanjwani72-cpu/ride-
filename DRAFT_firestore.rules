@@ -236,6 +236,100 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidTripShare(data) {
+      return data.keys().hasAll(['bookingId', 'rideId', 'passengerUid', 'passengerName', 'driverName', 'vehicleName', 'fromCity', 'toCity', 'pickupLocation', 'destinationLocation', 'departureDate', 'departureTime', 'lat', 'lng', 'pickupLat', 'pickupLng', 'destLat', 'destLng', 'speedKmh', 'distanceRemainingKm', 'etaMinutes', 'contactLabel', 'expiresAtIso', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['bookingId', 'rideId', 'passengerUid', 'passengerName', 'driverName', 'vehicleName', 'fromCity', 'toCity', 'pickupLocation', 'destinationLocation', 'departureDate', 'departureTime', 'lat', 'lng', 'pickupLat', 'pickupLng', 'destLat', 'destLng', 'speedKmh', 'distanceRemainingKm', 'etaMinutes', 'contactLabel', 'expiresAtIso', 'status', 'createdAt', 'updatedAt']) &&
+        isValidId(data.bookingId) &&
+        isValidId(data.rideId) &&
+        isValidId(data.passengerUid) &&
+        data.passengerName is string && data.passengerName.size() >= 1 && data.passengerName.size() <= 100 &&
+        data.driverName is string && data.driverName.size() >= 1 && data.driverName.size() <= 100 &&
+        data.vehicleName is string && data.vehicleName.size() <= 120 &&
+        data.fromCity is string && data.fromCity.size() >= 1 && data.fromCity.size() <= 60 &&
+        data.toCity is string && data.toCity.size() >= 1 && data.toCity.size() <= 60 &&
+        data.pickupLocation is string && data.pickupLocation.size() <= 200 &&
+        data.destinationLocation is string && data.destinationLocation.size() <= 200 &&
+        data.departureDate is string && data.departureDate.size() <= 30 &&
+        data.departureTime is string && data.departureTime.size() <= 30 &&
+        data.lat is number && data.lng is number &&
+        data.pickupLat is number && data.pickupLng is number &&
+        data.destLat is number && data.destLng is number &&
+        data.speedKmh is number && data.distanceRemainingKm is number && data.etaMinutes is number &&
+        data.contactLabel is string && data.contactLabel.size() <= 100 &&
+        data.expiresAtIso is string && data.expiresAtIso.size() <= 60 &&
+        data.status is string && data.status in ['active', 'revoked'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidFavoriteItem(data) {
+      return data.keys().hasAll(['passengerUid', 'favoriteType', 'fromCity', 'toCity', 'driverUid', 'driverName', 'driverPhoto', 'driverRating', 'vehicleName', 'farePerSeat', 'note', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['passengerUid', 'favoriteType', 'fromCity', 'toCity', 'driverUid', 'driverName', 'driverPhoto', 'driverRating', 'vehicleName', 'farePerSeat', 'note', 'createdAt', 'updatedAt']) &&
+        isValidId(data.passengerUid) &&
+        data.favoriteType is string && data.favoriteType in ['route', 'driver'] &&
+        data.fromCity is string && data.fromCity.size() <= 60 &&
+        data.toCity is string && data.toCity.size() <= 60 &&
+        data.driverUid is string && data.driverUid.size() <= 128 &&
+        data.driverName is string && data.driverName.size() <= 100 &&
+        data.driverPhoto is string && data.driverPhoto.size() <= 500 &&
+        data.driverRating is number && data.driverRating >= 0 && data.driverRating <= 5 &&
+        data.vehicleName is string && data.vehicleName.size() <= 120 &&
+        data.farePerSeat is number && data.farePerSeat >= 0 &&
+        data.note is string && data.note.size() <= 200 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidRecentSearch(data) {
+      return data.keys().hasAll(['passengerUid', 'fromCity', 'toCity', 'travelDate', 'minSeats', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['passengerUid', 'fromCity', 'toCity', 'travelDate', 'minSeats', 'createdAt', 'updatedAt']) &&
+        isValidId(data.passengerUid) &&
+        data.fromCity is string && data.fromCity.size() >= 1 && data.fromCity.size() <= 60 &&
+        data.toCity is string && data.toCity.size() >= 1 && data.toCity.size() <= 60 &&
+        data.travelDate is string && data.travelDate.size() <= 30 &&
+        data.minSeats is number && data.minSeats >= 1 && data.minSeats <= 20 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['rideId', 'bookingId', 'fromCity', 'toCity', 'passengerUid', 'passengerName', 'driverUid', 'driverName', 'senderUid', 'senderName', 'senderRole', 'text', 'read', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['rideId', 'bookingId', 'fromCity', 'toCity', 'passengerUid', 'passengerName', 'driverUid', 'driverName', 'senderUid', 'senderName', 'senderRole', 'text', 'read', 'createdAt', 'updatedAt']) &&
+        isValidId(data.rideId) &&
+        data.bookingId is string && data.bookingId.size() <= 128 &&
+        data.fromCity is string && data.fromCity.size() >= 1 && data.fromCity.size() <= 60 &&
+        data.toCity is string && data.toCity.size() >= 1 && data.toCity.size() <= 60 &&
+        isValidId(data.passengerUid) &&
+        data.passengerName is string && data.passengerName.size() >= 1 && data.passengerName.size() <= 100 &&
+        isValidId(data.driverUid) &&
+        data.driverName is string && data.driverName.size() >= 1 && data.driverName.size() <= 100 &&
+        isValidId(data.senderUid) &&
+        (data.senderUid == data.passengerUid || data.senderUid == data.driverUid) &&
+        data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 100 &&
+        data.senderRole is string && data.senderRole in ['passenger', 'driver'] &&
+        data.text is string && data.text.size() >= 1 && data.text.size() <= 500 &&
+        data.read is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidWalletTransaction(data) {
+      return data.keys().hasAll(['userUid', 'userRole', 'type', 'category', 'amount', 'title', 'description', 'paymentMethod', 'referenceId', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['userUid', 'userRole', 'type', 'category', 'amount', 'title', 'description', 'paymentMethod', 'referenceId', 'status', 'createdAt', 'updatedAt']) &&
+        isValidId(data.userUid) &&
+        data.userRole is string && data.userRole in ['passenger', 'driver'] &&
+        data.type is string && data.type in ['credit', 'debit'] &&
+        data.category is string && data.category in ['topup', 'ride_payment', 'refund', 'driver_earning', 'withdrawal', 'promo_bonus'] &&
+        data.amount is number && data.amount > 0 && data.amount <= 1000000 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.description is string && data.description.size() >= 1 && data.description.size() <= 300 &&
+        data.paymentMethod is string && data.paymentMethod.size() >= 1 && data.paymentMethod.size() <= 80 &&
+        data.referenceId is string && data.referenceId.size() >= 1 && data.referenceId.size() <= 128 &&
+        data.status is string && data.status in ['completed', 'pending', 'failed'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     function isValidAuditLog(data) {
       return data.keys().hasAll(['actorUid', 'actorEmail', 'action', 'targetType', 'targetId', 'details', 'createdAt']) &&
         data.keys().hasOnly(['actorUid', 'actorEmail', 'action', 'targetType', 'targetId', 'details', 'createdAt']) &&
@@ -470,6 +564,119 @@ service cloud.firestore {
           (existing().senderUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
         );
       allow delete: if isAdmin() && isValidId(alertId);
+    }
+
+    match /tripShares/{shareId} {
+      // Emergency contacts and family can read a specific active share link by token ID without authentication
+      allow get: if isValidId(shareId) && (existing().status == 'active' || (isVerifiedUser() && (existing().passengerUid == request.auth.uid || isAdmin())));
+      allow list: if isVerifiedUser() && (
+        request.auth.token.email == 'yasiralilanjwani72@gmail.com' ||
+        resource.data.passengerUid == request.auth.uid
+      );
+      allow create: if isVerifiedUser() && isValidId(shareId) && isValidTripShare(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        ((incoming().passengerUid == request.auth.uid && incoming().status == 'active') || isAdmin());
+      allow update: if isVerifiedUser() && isValidId(shareId) && isValidTripShare(incoming()) &&
+        incoming().passengerUid == existing().passengerUid &&
+        incoming().bookingId == existing().bookingId &&
+        incoming().rideId == existing().rideId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (existing().passengerUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'lat', 'lng', 'speedKmh', 'distanceRemainingKm', 'etaMinutes', 'updatedAt']))
+        );
+      allow delete: if isAdmin() && isValidId(shareId);
+    }
+
+    match /favorites/{favoriteId} {
+      allow get: if isVerifiedUser() && isValidId(favoriteId) && (existing().passengerUid == request.auth.uid || isAdmin());
+      allow list: if isVerifiedUser() && (
+        request.auth.token.email == 'yasiralilanjwani72@gmail.com' ||
+        resource.data.passengerUid == request.auth.uid
+      );
+      allow create: if isVerifiedUser() && isValidId(favoriteId) && isValidFavoriteItem(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        (incoming().passengerUid == request.auth.uid || isAdmin());
+      allow update: if isVerifiedUser() && isValidId(favoriteId) && isValidFavoriteItem(incoming()) &&
+        incoming().passengerUid == existing().passengerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (existing().passengerUid == request.auth.uid || isAdmin());
+      allow delete: if isVerifiedUser() && isValidId(favoriteId) && (existing().passengerUid == request.auth.uid || isAdmin());
+    }
+
+    match /recentSearches/{searchId} {
+      allow get: if isVerifiedUser() && isValidId(searchId) && (existing().passengerUid == request.auth.uid || isAdmin());
+      allow list: if isVerifiedUser() && (
+        request.auth.token.email == 'yasiralilanjwani72@gmail.com' ||
+        resource.data.passengerUid == request.auth.uid
+      );
+      allow create: if isVerifiedUser() && isValidId(searchId) && isValidRecentSearch(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        (incoming().passengerUid == request.auth.uid || isAdmin());
+      allow update: if isVerifiedUser() && isValidId(searchId) && isValidRecentSearch(incoming()) &&
+        incoming().passengerUid == existing().passengerUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (existing().passengerUid == request.auth.uid || isAdmin());
+      allow delete: if isVerifiedUser() && isValidId(searchId) && (existing().passengerUid == request.auth.uid || isAdmin());
+    }
+
+    match /messages/{messageId} {
+      allow get: if isVerifiedUser() && isValidId(messageId) && (
+        existing().passengerUid == request.auth.uid ||
+        existing().driverUid == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isVerifiedUser() && (
+        request.auth.token.email == 'yasiralilanjwani72@gmail.com' ||
+        resource.data.passengerUid == request.auth.uid ||
+        resource.data.driverUid == request.auth.uid
+      );
+      allow create: if isVerifiedUser() && isValidId(messageId) && isValidChatMessage(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        (incoming().senderUid == request.auth.uid || isAdmin());
+      allow update: if isVerifiedUser() && isValidId(messageId) && isValidChatMessage(incoming()) &&
+        incoming().rideId == existing().rideId &&
+        incoming().passengerUid == existing().passengerUid &&
+        incoming().driverUid == existing().driverUid &&
+        incoming().senderUid == existing().senderUid &&
+        incoming().text == existing().text &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          ((existing().passengerUid == request.auth.uid || existing().driverUid == request.auth.uid) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['read', 'updatedAt']))
+        );
+      allow delete: if isAdmin() && isValidId(messageId);
+    }
+
+    match /walletTransactions/{transactionId} {
+      allow get: if isVerifiedUser() && isValidId(transactionId) && (
+        existing().userUid == request.auth.uid || isAdmin()
+      );
+      allow list: if isVerifiedUser() && (
+        request.auth.token.email == 'yasiralilanjwani72@gmail.com' ||
+        resource.data.userUid == request.auth.uid
+      );
+      allow create: if isVerifiedUser() && isValidId(transactionId) && isValidWalletTransaction(incoming()) &&
+        incoming().createdAt == request.time && incoming().updatedAt == request.time &&
+        (incoming().userUid == request.auth.uid || isAdmin());
+      allow update: if isVerifiedUser() && isValidId(transactionId) && isValidWalletTransaction(incoming()) &&
+        incoming().userUid == existing().userUid &&
+        incoming().userRole == existing().userRole &&
+        incoming().type == existing().type &&
+        incoming().category == existing().category &&
+        incoming().amount == existing().amount &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (existing().userUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+      allow delete: if isAdmin() && isValidId(transactionId);
     }
 
     match /auditLogs/{logId} {

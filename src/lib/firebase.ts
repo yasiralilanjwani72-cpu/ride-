@@ -90,6 +90,7 @@ export const VALIDATION_LIMITS = {
   NOTIF_TITLE_MAX: 120,
   NOTIF_MSG_MAX: 400,
   URL_MAX: 1000,
+  DOC_URL_MAX: 250000,
 };
 
 export function sanitizeString(val: string | undefined | null, maxLen: number): string {

@@ -209,7 +209,100 @@ export interface SOSAlert {
   locationLabel: string;
   rideId: string;
   message: string;
-  status: 'active' | 'resolved';
+  status: 'active' | 'acknowledged' | 'resolved';
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface TripShare {
+  id: string;
+  bookingId: string;
+  rideId: string;
+  passengerUid: string;
+  passengerName: string;
+  driverName: string;
+  vehicleName: string;
+  fromCity: string;
+  toCity: string;
+  pickupLocation: string;
+  destinationLocation: string;
+  departureDate: string;
+  departureTime: string;
+  lat: number;
+  lng: number;
+  pickupLat: number;
+  pickupLng: number;
+  destLat: number;
+  destLng: number;
+  speedKmh: number;
+  distanceRemainingKm: number;
+  etaMinutes: number;
+  contactLabel: string;
+  expiresAtIso: string;
+  status: 'active' | 'revoked';
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface FavoriteItem {
+  id: string;
+  passengerUid: string;
+  favoriteType: 'route' | 'driver';
+  fromCity: string;
+  toCity: string;
+  driverUid: string;
+  driverName: string;
+  driverPhoto: string;
+  driverRating: number;
+  vehicleName: string;
+  farePerSeat: number;
+  note: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface RecentSearch {
+  id: string;
+  passengerUid: string;
+  fromCity: string;
+  toCity: string;
+  travelDate: string;
+  minSeats: number;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface ChatMessage {
+  id: string;
+  rideId: string;
+  bookingId: string;
+  fromCity: string;
+  toCity: string;
+  passengerUid: string;
+  passengerName: string;
+  driverUid: string;
+  driverName: string;
+  senderUid: string;
+  senderName: string;
+  senderRole: 'passenger' | 'driver';
+  text: string;
+  read: boolean;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface WalletTransaction {
+  id: string;
+  userUid: string;
+  userRole: 'passenger' | 'driver';
+  type: 'credit' | 'debit';
+  category: 'topup' | 'ride_payment' | 'refund' | 'driver_earning' | 'withdrawal' | 'promo_bonus';
+  amount: number;
+  title: string;
+  description: string;
+  paymentMethod: string;
+  referenceId: string;
+  status: 'completed' | 'pending' | 'failed';
   createdAt?: unknown;
   updatedAt?: unknown;
 }

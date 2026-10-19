@@ -72,9 +72,9 @@
         "cnicNumber": { "type": "string", "maxLength": 40 },
         "licenseNumber": { "type": "string", "maxLength": 50 },
         "licenseExpiry": { "type": "string", "maxLength": 30 },
-        "vehicleRegDocUrl": { "type": "string", "maxLength": 1000 },
-        "cnicDocUrl": { "type": "string", "maxLength": 1000 },
-        "licenseDocUrl": { "type": "string", "maxLength": 1000 },
+        "vehicleRegDocUrl": { "type": "string", "maxLength": 250000 },
+        "cnicDocUrl": { "type": "string", "maxLength": 250000 },
+        "licenseDocUrl": { "type": "string", "maxLength": 250000 },
         "adminNotes": { "type": "string", "maxLength": 500 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -241,11 +241,124 @@
         "locationLabel": { "type": "string", "maxLength": 200 },
         "rideId": { "type": "string", "maxLength": 128 },
         "message": { "type": "string", "minLength": 1, "maxLength": 400 },
-        "status": { "type": "string", "enum": ["active", "resolved"] },
+        "status": { "type": "string", "enum": ["active", "acknowledged", "resolved"] },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["senderUid", "senderName", "senderEmail", "senderPhone", "senderRole", "lat", "lng", "locationLabel", "rideId", "message", "status", "createdAt", "updatedAt"]
+    },
+    "TripShare": {
+      "title": "TripShare",
+      "description": "Temporary read-only trip share record for emergency contacts and family",
+      "type": "object",
+      "properties": {
+        "bookingId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "rideId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "passengerUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "passengerName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "driverName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "vehicleName": { "type": "string", "maxLength": 120 },
+        "fromCity": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "toCity": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "pickupLocation": { "type": "string", "maxLength": 200 },
+        "destinationLocation": { "type": "string", "maxLength": 200 },
+        "departureDate": { "type": "string", "maxLength": 30 },
+        "departureTime": { "type": "string", "maxLength": 30 },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "pickupLat": { "type": "number" },
+        "pickupLng": { "type": "number" },
+        "destLat": { "type": "number" },
+        "destLng": { "type": "number" },
+        "speedKmh": { "type": "number" },
+        "distanceRemainingKm": { "type": "number" },
+        "etaMinutes": { "type": "number" },
+        "contactLabel": { "type": "string", "maxLength": 100 },
+        "expiresAtIso": { "type": "string", "maxLength": 60 },
+        "status": { "type": "string", "enum": ["active", "revoked"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["bookingId", "rideId", "passengerUid", "passengerName", "driverName", "vehicleName", "fromCity", "toCity", "pickupLocation", "destinationLocation", "departureDate", "departureTime", "lat", "lng", "pickupLat", "pickupLng", "destLat", "destLng", "speedKmh", "distanceRemainingKm", "etaMinutes", "contactLabel", "expiresAtIso", "status", "createdAt", "updatedAt"]
+    },
+    "FavoriteItem": {
+      "title": "FavoriteItem",
+      "description": "Saved favorite route or driver for a passenger",
+      "type": "object",
+      "properties": {
+        "passengerUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "favoriteType": { "type": "string", "enum": ["route", "driver"] },
+        "fromCity": { "type": "string", "maxLength": 60 },
+        "toCity": { "type": "string", "maxLength": 60 },
+        "driverUid": { "type": "string", "maxLength": 128 },
+        "driverName": { "type": "string", "maxLength": 100 },
+        "driverPhoto": { "type": "string", "maxLength": 500 },
+        "driverRating": { "type": "number" },
+        "vehicleName": { "type": "string", "maxLength": 120 },
+        "farePerSeat": { "type": "number" },
+        "note": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["passengerUid", "favoriteType", "fromCity", "toCity", "driverUid", "driverName", "driverPhoto", "driverRating", "vehicleName", "farePerSeat", "note", "createdAt", "updatedAt"]
+    },
+    "RecentSearch": {
+      "title": "RecentSearch",
+      "description": "Persisted passenger intercity route and date search query",
+      "type": "object",
+      "properties": {
+        "passengerUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fromCity": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "toCity": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "travelDate": { "type": "string", "maxLength": 30 },
+        "minSeats": { "type": "number", "minimum": 1, "maximum": 20 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["passengerUid", "fromCity", "toCity", "travelDate", "minSeats", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Real-time in-app coordination message between a Passenger and Driver for a specific ride",
+      "type": "object",
+      "properties": {
+        "rideId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "bookingId": { "type": "string", "maxLength": 128 },
+        "fromCity": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "toCity": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "passengerUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "passengerName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "driverUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "driverName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "senderUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "senderRole": { "type": "string", "enum": ["passenger", "driver"] },
+        "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["rideId", "bookingId", "fromCity", "toCity", "passengerUid", "passengerName", "driverUid", "driverName", "senderUid", "senderName", "senderRole", "text", "read", "createdAt", "updatedAt"]
+    },
+    "WalletTransaction": {
+      "title": "WalletTransaction",
+      "description": "Ride Wallet transaction record for Passenger and Driver portals (top-ups, withdrawals, ride payments, refunds, and captain payouts)",
+      "type": "object",
+      "properties": {
+        "userUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userRole": { "type": "string", "enum": ["passenger", "driver"] },
+        "type": { "type": "string", "enum": ["credit", "debit"] },
+        "category": { "type": "string", "enum": ["topup", "ride_payment", "refund", "driver_earning", "withdrawal", "promo_bonus"] },
+        "amount": { "type": "number" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "paymentMethod": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "referenceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": { "type": "string", "enum": ["completed", "pending", "failed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userUid", "userRole", "type", "category", "amount", "title", "description", "paymentMethod", "referenceId", "status", "createdAt", "updatedAt"]
     },
     "AuditLog": {
       "title": "AuditLog",
@@ -307,6 +420,26 @@
     "/sosAlerts/{alertId}": {
       "schema": "SOSAlert",
       "description": "Emergency SOS alerts with live GPS coordinates for Admin response"
+    },
+    "/tripShares/{shareId}": {
+      "schema": "TripShare",
+      "description": "Temporary read-only trip share links for emergency contacts and family"
+    },
+    "/favorites/{favoriteId}": {
+      "schema": "FavoriteItem",
+      "description": "Saved favorite routes and drivers for passengers"
+    },
+    "/recentSearches/{searchId}": {
+      "schema": "RecentSearch",
+      "description": "Persisted passenger intercity route and date search queries"
+    },
+    "/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Real-time in-app coordination messages between passengers and drivers"
+    },
+    "/walletTransactions/{transactionId}": {
+      "schema": "WalletTransaction",
+      "description": "Ride Wallet ledger and transaction history for passengers and drivers"
     },
     "/auditLogs/{logId}": {
       "schema": "AuditLog",

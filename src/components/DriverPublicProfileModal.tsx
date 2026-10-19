@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import defaultDriverAvatar from '../assets/images/avatar_driver_pro_1791134254517.jpg';
 import defaultVehicleImg from '../assets/images/vehicle_sedan_white_1791134268066.jpg';
+import RideRoutePreviewMap from './RideRoutePreviewMap';
 
 interface DriverPublicProfileModalProps {
   driver: DriverProfile;
@@ -357,6 +358,9 @@ export default function DriverPublicProfileModal({
               <div className="text-sm text-slate-600 bg-slate-50 p-4 rounded-lg border border-slate-200">
                 {ride.description}
               </div>
+
+              {/* Google Maps Planned Route Preview between From and To locations */}
+              <RideRoutePreviewMap ride={ride} />
 
               {/* Seat Selector & Book Action */}
               {onBookSeats && ride.availableSeats > 0 && passengerProfile && (
